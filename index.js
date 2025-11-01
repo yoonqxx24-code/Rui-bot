@@ -220,45 +220,55 @@ client.on(Events.InteractionCreate, async (i) => {
     }
 
     // /work
-if (i.commandName === 'work') {
-  const users = loadJson(USERS_FILE, {});
-  const id = i.user.id;
-  const name = i.user.username;
+    if (i.commandName === 'work') {
+      const users = loadJson(USERS_FILE, {});
+      const id = i.user.id;
+      const name = i.user.username;
 
-  if (!users[id]) {
-    users[id] = {
-      id,
-      name,
-      coins: 0,
-      butterflies: 0,
-      created: new Date().toISOString(),
-      lastWork: null
-    };
-  }
+      if (!users[id]) {
+        users[id] = {
+          id,
+          name,
+          coins: 0,
+          butterflies: 0,
+          created: new Date().toISOString(),
+          lastDaily: null,
+          lastWeekly: null,
+          lastMonthly: null,
+          lastWork: null
+        };
+      }
 
-  const now = Date.now();
-  const COOLDOWN = 15 * 60 * 1000; // 15 minutes
-  const u = users[id];
+      const now = Date.now();
+      const COOLDOWN = 15 * 60 * 1000; // 15 minutes
+      const u = users[id];
 
-  if (u.lastWork && now - new Date(u.lastWork).getTime() < COOLDOWN) {
-    const mins = Math.ceil((COOLDOWN - (now - new Date(u.lastWork).getTime())) / 60000);
-    const embed = ruiEmbed("You’ve already helped out recently.", `You can work again in about ${mins} minute(s).`);
-    return i.reply({ embeds: [embed], ephemeral: true });
-  }
+      if (u.lastWork && now - new Date(u.lastWork).getTime() < COOLDOWN) {
+        const leftMs = COOLDOWN - (now - new Date(u.lastWork).getTime());
+        const leftMins = Math.ceil(leftMs / (60 * 1000));
+        const embed = ruiEmbed(
+          "Not yet",
+          `You already helped out recently. Come back in ${leftMins} minute(s).`
+        );
+        return i.reply({ embeds: [embed] });
+      }
 
-  const coins = rand(200, 750);
-  const butterflies = rand(3, 20);
-  const msg = WORK_MESSAGES[Math.floor(Math.random() * WORK_MESSAGES.length)];
+      const coins = rand(200, 750);
+      const butterflies = rand(3, 20);
+      const msg = WORK_MESSAGES[Math.floor(Math.random() * WORK_MESSAGES.length)];
 
-  u.coins += coins;
-  u.butterflies += butterflies;
-  u.lastWork = new Date().toISOString();
-  saveJson(USERS_FILE, users);
+      u.coins += coins;
+      u.butterflies += butterflies;
+      u.lastWork = new Date().toISOString();
+      saveJson(USERS_FILE, users);
 
-  const embed = ruiEmbed("Work complete!", `${msg}\n\n🪙 **${coins} coins**\n🦋 **${butterflies} butterflies**`);
-  return i.reply({ embeds: [embed] });
-}
-
+      const embed = ruiEmbed(
+        "Work complete",
+        `${msg}\nYou earned ${coins} 🪙 and ${butterflies} 🦋.\nNew total: ${u.coins} 🪙 / ${u.butterflies} 🦋.`
+      );
+      return i.reply({ embeds: [embed] });
+    }
+    
 // /drop – safe
 if (i.commandName === 'drop') {
   
