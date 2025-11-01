@@ -53,6 +53,16 @@ function rand(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+const WORK_MESSAGES = [
+  "Good job today. You’re really giving your all, huh? Let me handle the rest.",
+  "Work’s done! You earned these coins. Don’t forget to rest a little.",
+  "You’ve been so focused lately. The butterflies seem proud of you. 🦋",
+  "Here you go — your rewards. Small steps still count.",
+  "You showed up again today… I’m really happy you did.",
+  "Hard work suits you. I’ll make sure these coins reach you.",
+  "You’re getting better every time. I’m watching."
+];
+
 client.once(Events.ClientReady, async (c) => {
   console.log("Logged in as " + c.user.tag);
   try {
@@ -209,6 +219,49 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
+    // /work
+if (i.commandName === 'work') {
+  const users = loadJson(USERS_FILE, {});
+  const id = i.user.id;
+  const name = i.user.username;
+
+  if (!users[id]) {
+    users[id] = {
+      id,
+      name,
+      coins: 0,
+      butterflies: 0,
+      created: new Date().toISOString(),
+      lastWork: null
+    };
+  }
+
+  const now = Date.now();
+  const COOLDOWN = 15 * 60 * 1000; // 15 minutes
+  const u = users[id];
+
+  if (u.lastWork && now - new Date(u.lastWork).getTime() < COOLDOWN) {
+    const mins = Math.ceil((COOLDOWN - (now - new Date(u.lastWork).getTime())) / 60000);
+    const embed = ruiEmbed("You’ve already helped out recently.", `You can work again in about ${mins} minute(s).`);
+    return i.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  const coins = rand(200, 750);
+  const butterflies = rand(3, 20);
+  const msg = WORK_MESSAGES[Math.floor(Math.random() * WORK_MESSAGES.length)];
+
+  u.coins += coins;
+  u.butterflies += butterflies;
+  u.lastWork = new Date().toISOString();
+  saveJson(USERS_FILE, users);
+
+  const embed = ruiEmbed("Work complete!", `${msg}\n\n🪙 **${coins} coins**\n🦋 **${butterflies} butterflies**`);
+  return i.reply({ embeds: [embed] });
+}
+
+// /drop – safe
+if (i.commandName === 'drop') {
+  
     // /drop — safe
     if (i.commandName === 'drop') {
       const cards = loadJson(CARDS_FILE, []);
