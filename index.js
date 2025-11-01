@@ -191,7 +191,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    // /monthly
+// /monthly
     if (i.commandName === 'monthly') {
       const MONTH = 30 * 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -219,35 +219,16 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    // /work
+  // /work
     if (i.commandName === 'work') {
-      const users = loadJson(USERS_FILE, {});
-      const id = i.user.id;
-      const name = i.user.username;
-
-      if (!users[id]) {
-        users[id] = {
-          id,
-          name,
-          coins: 0,
-          butterflies: 0,
-          created: new Date().toISOString(),
-          lastDaily: null,
-          lastWeekly: null,
-          lastMonthly: null,
-          lastWork: null
-        };
-      }
-
       const now = Date.now();
       const COOLDOWN = 15 * 60 * 1000; // 15 minutes
-      const u = users[id];
 
       if (u.lastWork && now - new Date(u.lastWork).getTime() < COOLDOWN) {
         const leftMs = COOLDOWN - (now - new Date(u.lastWork).getTime());
         const leftMins = Math.ceil(leftMs / (60 * 1000));
         const embed = ruiEmbed(
-          "Not yet",
+          'Not yet',
           `You already helped out recently. Come back in ${leftMins} minute(s).`
         );
         return i.reply({ embeds: [embed] });
@@ -263,34 +244,35 @@ client.on(Events.InteractionCreate, async (i) => {
       saveJson(USERS_FILE, users);
 
       const embed = ruiEmbed(
-        "Work complete",
+        'Work complete',
         `${msg}\nYou earned ${coins} 🪙 and ${butterflies} 🦋.\nNew total: ${u.coins} 🪙 / ${u.butterflies} 🦋.`
       );
       return i.reply({ embeds: [embed] });
     }
-    
-// /drop – safe
-if (i.commandName === 'drop') {
-  
-    // /drop — safe
+
+  // /drop — safe
     if (i.commandName === 'drop') {
       const cards = loadJson(CARDS_FILE, []);
       if (!cards.length) {
         return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
       }
+
       const show = cards.slice(0, 3);
       return i.reply({
-        embeds: [ruiEmbed('Three cards appeared', 'Claiming will be added next.', show.map((c, n) => ({
-          name: `Card ${n + 1}`,
-          value: `${c.id} • ${c.group} — ${c.member} • ${c.rarity}`
-        })))]
+        embeds: [ruiEmbed(
+          'Three cards appeared',
+          'Claiming will be added next.',
+          show.map((c, n) => ({
+            name: `Card ${n + 1}`,
+            value: `${c.id} • ${c.group} — ${c.member} • ${c.rarity}`
+          }))
+        )]
       });
     }
 
   } catch (err) {
     console.error(err);
-    // show error in Discord so you see it
-    return i.reply({ embeds: [ruiEmbed('Error', 'Something went wrong in Rui. Check Termux for details.')] });
+    return i.reply({ embeds: [ruiEmbed('Error', 'Something went wrong in Rui. Check Termux / Render for details.') ] });
   }
 });
 
