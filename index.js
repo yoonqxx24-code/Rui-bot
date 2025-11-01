@@ -290,8 +290,14 @@ client.on(Events.InteractionCreate, async (i) => {
 
     // /work
     if (i.commandName === 'work') {
+      // u kommt von oben (du hast users, id, name, u schon)
+      // falls alter user keine lastWork hat → hinzufügen
+      if (typeof u.lastWork === 'undefined') {
+        u.lastWork = null;
+      }
+
       const now = Date.now();
-      const COOLDOWN = 15 * 60 * 1000; // 15min
+      const COOLDOWN = 15 * 60 * 1000; // 15 min
 
       if (u.lastWork && now - new Date(u.lastWork).getTime() < COOLDOWN) {
         const leftMs = COOLDOWN - (now - new Date(u.lastWork).getTime());
@@ -306,6 +312,7 @@ client.on(Events.InteractionCreate, async (i) => {
         });
       }
 
+      // rewards
       const coins = rand(200, 750);
       const butterflies = rand(3, 20);
       const msg = WORK_MESSAGES[Math.floor(Math.random() * WORK_MESSAGES.length)];
@@ -313,7 +320,11 @@ client.on(Events.InteractionCreate, async (i) => {
       u.coins += coins;
       u.butterflies += butterflies;
       u.lastWork = new Date().toISOString();
-      saveJson(USERS_FILE, users);
+
+      // speichern
+      const allUsers = loadJson(USERS_FILE, {});
+      allUsers[id] = u;
+      saveJson(USERS_FILE, allUsers);
 
       return i.reply({
         embeds: [
@@ -324,7 +335,7 @@ client.on(Events.InteractionCreate, async (i) => {
         ]
       });
     }
-
+    
     // /drop
     if (i.commandName === 'drop') {
       const cards = loadJson(CARDS_FILE, []);
