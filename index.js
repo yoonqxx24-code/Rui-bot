@@ -5,6 +5,29 @@ const { Client, GatewayIntentBits, Events, EmbedBuilder } = require('discord.js'
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
+// auto-register slash commands on startup
+const { REST, Routes, SlashCommandBuilder } = require('discord.js');
+
+async function registerCommands() {
+  const commands = [
+    new SlashCommandBuilder().setName('ping').setDescription('Check if Rui is awake'),
+    new SlashCommandBuilder().setName('start').setDescription('Create your collector profile'),
+    new SlashCommandBuilder().setName('balance').setDescription('Show your coins, butterflies and cards'),
+    new SlashCommandBuilder().setName('daily').setDescription('Claim your daily reward'),
+    new SlashCommandBuilder().setName('weekly').setDescription('Claim your weekly reward'),
+    new SlashCommandBuilder().setName('monthly').setDescription('Claim your monthly reward'),
+    new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards'),
+    new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards')
+  ].map(c => c.toJSON());
+
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
+  await rest.put(
+    Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+    { body: commands }
+  );
+  console.log('Slash commands registered (guild)');
+}
 const USERS_FILE = path.join(__dirname, 'users.json');
 const USER_CARDS_FILE = path.join(__dirname, 'user_cards.json');
 const CARDS_FILE = path.join(__dirname, 'cards.json');
@@ -30,8 +53,13 @@ function rand(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-client.once(Events.ClientReady, (c) => {
+client.once(Events.ClientReady, async (c) => {
   console.log("Logged in as " + c.user.tag);
+  try {
+    await registerCommands();
+  } catch (err) {
+    console.error('Failed to register commands:', err);
+  }
 });
 client.on(Events.InteractionCreate, async (i) => {
   if (!i.isChatInputCommand()) return;
