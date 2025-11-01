@@ -8,6 +8,7 @@ const commands = [
   new SlashCommandBuilder().setName('daily').setDescription('Claim your daily reward'),
   new SlashCommandBuilder().setName('weekly').setDescription('Claim your weekly reward'),
   new SlashCommandBuilder().setName('monthly').setDescription('Claim your monthly reward'),
+  new SlashCommandBuilder().setName('work').setDescription('Do a small task for Rui and earn rewards'),
   new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards')
 ].map(c => c.toJSON());
 
