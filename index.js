@@ -128,6 +128,38 @@ async function registerCommands() {
     new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards'),
     new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards'),
     new SlashCommandBuilder().setName('inventory').setDescription('Show your collected cards'),
+
+    // NEW: /gift
+    new SlashCommandBuilder()
+      .setName('gift')
+      .setDescription('Send coins, butterflies or a card to another player')
+      .addUserOption(o =>
+        o.setName('target')
+          .setDescription('Who should receive it?')
+          .setRequired(true)
+      )
+      .addStringOption(o =>
+        o.setName('what')
+          .setDescription('What do you want to gift?')
+          .setRequired(true)
+          .addChoices(
+            { name: 'Coins', value: 'coins' },
+            { name: 'Butterflies', value: 'butterflies' },
+            { name: 'Card', value: 'card' }
+          )
+      )
+      .addIntegerOption(o =>
+        o.setName('amount')
+          .setDescription('Amount (for coins/butterflies)')
+          .setRequired(false)
+      )
+      .addStringOption(o =>
+        o.setName('card_id')
+          .setDescription('Card ID (for card gifts)')
+          .setRequired(false)
+      ),
+
+    // STAFF: addcard
     new SlashCommandBuilder()
       .setName('addcard')
       .setDescription('STAFF ONLY – create a new card')
@@ -251,12 +283,12 @@ client.on(Events.InteractionCreate, async (i) => {
     }
     const u = users[id];
 
-    // /ping
+    /* /ping */
     if (i.commandName === 'ping') {
       return i.reply({ embeds: [ruiEmbed('Pong', 'Rui is awake.')] });
     }
 
-    // /start
+    /* /start */
     if (i.commandName === 'start') {
       if (u && u.created) {
         return i.reply({ embeds: [ruiEmbed('Profile already exists', `Oh! Seems like you already created a profile, ${name}. Have fun playing.`)] });
@@ -276,7 +308,7 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ embeds: [ruiEmbed('Profile created', `Hi ${name}. Your collector profile has been created.`)] });
     }
 
-    // /balance
+    /* /balance */
     if (i.commandName === 'balance') {
       const allUserCards = loadJson(USER_CARDS_FILE, {});
       const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
@@ -293,7 +325,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    // /daily
+    /* /daily */
     if (i.commandName === 'daily') {
       const DAY = 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -321,7 +353,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    // /weekly
+    /* /weekly */
     if (i.commandName === 'weekly') {
       const WEEK = 7 * 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -349,7 +381,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    // /monthly
+    /* /monthly */
     if (i.commandName === 'monthly') {
       const MONTH = 30 * 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -377,7 +409,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    // /work
+    /* /work */
     if (i.commandName === 'work') {
       const now = Date.now();
       const COOLDOWN = 15 * 60 * 1000;
@@ -404,7 +436,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    // /inventory
+    /* /inventory */
     if (i.commandName === 'inventory') {
       const allUserCards = loadJson(USER_CARDS_FILE, {});
       const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
@@ -433,7 +465,109 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    // /addcard (STAFF)
+    /* /gift */
+    if (i.commandName === 'gift') {
+      const targetUser = i.options.getUser('target');
+      const what = i.options.getString('what');
+      const amount = i.options.getInteger('amount');
+      const cardId = i.options.getString('card_id');
+
+      if (!targetUser) {
+        return i.reply({ embeds: [ruiEmbed('No target', 'You have to pick someone to gift to.')] });
+      }
+
+      if (targetUser.id === id) {
+        return i.reply({ embeds: [ruiEmbed('…No.', 'You can’t gift to yourself 😒')] });
+      }
+
+      // sicherstellen, dass der Empfänger in users.json existiert
+      if (!users[targetUser.id]) {
+        users[targetUser.id] = {
+          id: targetUser.id,
+          name: targetUser.username,
+          coins: 0,
+          butterflies: 0,
+          created: new Date().toISOString(),
+          lastDaily: null,
+          lastWeekly: null,
+          lastMonthly: null,
+          lastWork: null
+        };
+      }
+
+      const receiver = users[targetUser.id];
+
+      // coins / butterflies
+      if (what === 'coins' || what === 'butterflies') {
+        if (!amount || amount <= 0) {
+          return i.reply({ embeds: [ruiEmbed('Missing amount', 'Tell me how many you want to send.')] });
+        }
+
+        if (what === 'coins') {
+          if (u.coins < amount) {
+            return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.coins} coins.`)], ephemeral: true });
+          }
+          u.coins -= amount;
+          receiver.coins += amount;
+        } else {
+          if (u.butterflies < amount) {
+            return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.butterflies} butterflies.`)], ephemeral: true });
+          }
+          u.butterflies -= amount;
+          receiver.butterflies += amount;
+        }
+
+        saveJson(USERS_FILE, users);
+
+        return i.reply({
+          embeds: [ruiEmbed(
+            'Gift sent',
+            `${name} sent **${amount}** ${what === 'coins' ? '🪙 coins' : '🦋 butterflies'} to ${targetUser.username}.`
+          )]
+        });
+      }
+
+      // card
+      if (what === 'card') {
+        const allUserCards = loadJson(USER_CARDS_FILE, {});
+        const senderCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
+        const receiverCards = Array.isArray(allUserCards[targetUser.id]) ? allUserCards[targetUser.id] : [];
+
+        if (!cardId) {
+          return i.reply({
+            embeds: [ruiEmbed('Missing card', 'Tell me which card ID you want to send.')],
+            ephemeral: true
+          });
+        }
+
+        const idx = senderCards.findIndex(c => c.id === cardId);
+        if (idx === -1) {
+          return i.reply({
+            embeds: [ruiEmbed('Not found', `You don’t own a card with ID **${cardId}**.`)],
+            ephemeral: true
+          });
+        }
+
+        const cardToSend = senderCards.splice(idx, 1)[0];
+        receiverCards.push(cardToSend);
+
+        allUserCards[id] = senderCards;
+        allUserCards[targetUser.id] = receiverCards;
+        saveJson(USER_CARDS_FILE, allUserCards);
+
+        return i.reply({
+          embeds: [ruiEmbed(
+            'Card sent',
+            `${name} sent **${cardToSend.id}** (${cardToSend.group} — ${cardToSend.member}) to ${targetUser.username}.`
+          )]
+        });
+      }
+
+      // falls jemand was schreibt was wir nicht kennen
+      return i.reply({ embeds: [ruiEmbed('Unknown thing', 'You can gift `coins`, `butterflies` or `card`.')] });
+    }
+
+    /* /addcard (STAFF) */
     if (i.commandName === 'addcard') {
       const staffEnv = process.env.STAFF_IDS || '';
       const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
@@ -452,7 +586,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const era = i.options.getString('era') || null;
       const version = i.options.getString('version') || null;
       const image = i.options.getString('image') || null;
-      const ctype = i.options.getString('type'); // 👈  HIER war dein Tippfehler
+      const ctype = i.options.getString('type');
       const droppable = i.options.getBoolean('droppable');
 
       const cards = loadJson(CARDS_FILE, []);
@@ -487,7 +621,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    // /drop
+    /* /drop */
     if (i.commandName === 'drop') {
       const cards = loadJson(CARDS_FILE, []);
       if (!cards.length) {
