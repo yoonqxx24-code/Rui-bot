@@ -1,6 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 const {
   Client,
   GatewayIntentBits,
@@ -17,10 +18,85 @@ const {
 // Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Dateien
+// Dateien (lokales Backup)
 const USERS_FILE = path.join(__dirname, 'users.json');
 const USER_CARDS_FILE = path.join(__dirname, 'user_cards.json');
 const CARDS_FILE = path.join(__dirname, 'cards.json');
+
+/* ----------------------------------------------------
+   Remote + lokal speichern / laden
+---------------------------------------------------- */
+
+async function loadJsonOrRemote(file, fallback) {
+  const BIN_KEY = process.env.JSONBIN_KEY;
+  const BIN_ID = process.env.JSONBIN_ID;
+
+  // wenn kein jsonbin gesetzt ist → lokal
+  if (!BIN_KEY || !BIN_ID) {
+    if (!fs.existsSync(file)) return fallback;
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+    catch { return fallback; }
+  }
+
+  // versuchen von jsonbin zu laden
+  try {
+    const res = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+      headers: { 'X-Master-Key': BIN_KEY }
+    });
+    // wir speichern ALLES in einem bin, deshalb prüfen wir ob da schon struktur ist
+    const record = res.data.record;
+    if (!record) return fallback;
+    // wenn wir explizit eine datei wollten, holen wir uns nur den teil
+    if (file === USERS_FILE) return record.users ?? fallback;
+    if (file === USER_CARDS_FILE) return record.user_cards ?? fallback;
+    if (file === CARDS_FILE) return record.cards ?? fallback;
+    return record;
+  } catch (err) {
+    console.error('JSONBin load failed, using local:', err.message);
+    if (!fs.existsSync(file)) return fallback;
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+    catch { return fallback; }
+  }
+}
+
+async function saveJsonOrRemote(file, data) {
+  const BIN_KEY = process.env.JSONBIN_KEY;
+  const BIN_ID = process.env.JSONBIN_ID;
+
+  // immer lokal speichern
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+
+  // wenn kein jsonbin → fertig
+  if (!BIN_KEY || !BIN_ID) return;
+
+  try {
+    // erst aktuellen stand holen
+    let current = {};
+    try {
+      const res = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+        headers: { 'X-Master-Key': BIN_KEY }
+      });
+      current = res.data.record || {};
+    } catch {
+      current = {};
+    }
+
+    // je nachdem welche datei wir speichern, setzen wir das feld im gesamt-json
+    if (file === USERS_FILE) current.users = data;
+    else if (file === USER_CARDS_FILE) current.user_cards = data;
+    else if (file === CARDS_FILE) current.cards = data;
+
+    // wieder hochladen
+    await axios.put(`https://api.jsonbin.io/v3/b/${BIN_ID}`, current, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': BIN_KEY
+      }
+    });
+  } catch (err) {
+    console.error('JSONBin save failed:', err.message);
+  }
+}
 
 /* ----------------------------------------------------
    BOOST / DROP – Hilfsdaten
@@ -109,16 +185,6 @@ function ruiEmbed(title, desc, fields = []) {
     .setColor(0xFFB6C1);
   if (fields.length) e.addFields(...fields);
   return e;
-}
-
-function loadJson(file, fallback) {
-  if (!fs.existsSync(file)) return fallback;
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch { return fallback; }
-}
-
-function saveJson(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
 function rand(min, max) {
@@ -273,9 +339,8 @@ client.once(Events.ClientReady, async (c) => {
 client.on(Events.InteractionCreate, async (i) => {
   /* ---------------------- BUTTONS ---------------------- */
   if (i.isButton()) {
-    // nur Drop-Buttons
     if (i.customId.startsWith('drop_pick_')) {
-      const users = loadJson(USERS_FILE, {});
+      const users = await loadJsonOrRemote(USERS_FILE, {});
       const id = i.user.id;
       const u = users[id];
 
@@ -286,7 +351,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const now = Date.now();
       if (u.pendingDrop.expiresAt && now > u.pendingDrop.expiresAt) {
         delete u.pendingDrop;
-        saveJson(USERS_FILE, users);
+        await saveJsonOrRemote(USERS_FILE, users);
         return i.reply({ content: 'Your drop expired. Use /drop again.', ephemeral: true });
       }
 
@@ -299,15 +364,15 @@ client.on(Events.InteractionCreate, async (i) => {
       const chosen = cards[idx];
 
       // Karte ins Inventar
-      const allUserCards = loadJson(USER_CARDS_FILE, {});
+      const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
       if (!Array.isArray(allUserCards[id])) allUserCards[id] = [];
       allUserCards[id].push(chosen);
-      saveJson(USER_CARDS_FILE, allUserCards);
+      await saveJsonOrRemote(USER_CARDS_FILE, allUserCards);
 
       // pending weg + cooldown starten
       u.pendingDrop = null;
       u.lastDrop = new Date().toISOString();
-      saveJson(USERS_FILE, users);
+      await saveJsonOrRemote(USERS_FILE, users);
 
       return i.reply({
         embeds: [ruiEmbed(
@@ -317,7 +382,6 @@ client.on(Events.InteractionCreate, async (i) => {
         ephemeral: true
       });
     }
-
     return;
   }
   /* ------------------- END BUTTONS --------------------- */
@@ -325,7 +389,7 @@ client.on(Events.InteractionCreate, async (i) => {
   if (!i.isChatInputCommand()) return;
 
   try {
-    const users = loadJson(USERS_FILE, {});
+    const users = await loadJsonOrRemote(USERS_FILE, {});
     const id = i.user.id;
     const name = i.user.username;
 
@@ -343,7 +407,7 @@ client.on(Events.InteractionCreate, async (i) => {
         lastDrop: null,
         pendingDrop: null
       };
-      saveJson(USERS_FILE, users);
+      await saveJsonOrRemote(USERS_FILE, users);
     }
     const u = users[id];
 
@@ -370,13 +434,13 @@ client.on(Events.InteractionCreate, async (i) => {
         lastDrop: null,
         pendingDrop: null
       };
-      saveJson(USERS_FILE, users);
+      await saveJsonOrRemote(USERS_FILE, users);
       return i.reply({ embeds: [ruiEmbed('Profile created', `Hi ${name}. Your collector profile has been created.`)] });
     }
 
     /* /balance */
     if (i.commandName === 'balance') {
-      const allUserCards = loadJson(USER_CARDS_FILE, {});
+      const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
       const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
       return i.reply({
         embeds: [ruiEmbed(
@@ -407,7 +471,7 @@ client.on(Events.InteractionCreate, async (i) => {
       u.coins += coins;
       u.butterflies += butterflies;
       u.lastDaily = new Date().toISOString();
-      saveJson(USERS_FILE, users);
+      await saveJsonOrRemote(USERS_FILE, users);
 
       return i.reply({
         embeds: [ruiEmbed('Daily collected', `${name}, here is what I found for you today.`, [
@@ -435,7 +499,7 @@ client.on(Events.InteractionCreate, async (i) => {
       u.coins += coins;
       u.butterflies += butterflies;
       u.lastWeekly = new Date().toISOString();
-      saveJson(USERS_FILE, users);
+      await saveJsonOrRemote(USERS_FILE, users);
 
       return i.reply({
         embeds: [ruiEmbed('Weekly collected', `Weekly rewards for ${name}.`, [
@@ -463,7 +527,7 @@ client.on(Events.InteractionCreate, async (i) => {
       u.coins += coins;
       u.butterflies += butterflies;
       u.lastMonthly = new Date().toISOString();
-      saveJson(USERS_FILE, users);
+      await saveJsonOrRemote(USERS_FILE, users);
 
       return i.reply({
         embeds: [ruiEmbed('Monthly collected', `Big drop for ${name}.`, [
@@ -495,7 +559,7 @@ client.on(Events.InteractionCreate, async (i) => {
       u.coins += coins;
       u.butterflies += butterflies;
       u.lastWork = new Date().toISOString();
-      saveJson(USERS_FILE, users);
+      await saveJsonOrRemote(USERS_FILE, users);
 
       return i.reply({
         embeds: [ruiEmbed('Work complete', `${msg}\nYou earned ${coins} 🪙 and ${butterflies} 🦋.\nNew total: ${u.coins} 🪙 / ${u.butterflies} 🦋.`)]
@@ -504,7 +568,7 @@ client.on(Events.InteractionCreate, async (i) => {
 
     /* /inventory */
     if (i.commandName === 'inventory') {
-      const allUserCards = loadJson(USER_CARDS_FILE, {});
+      const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
       const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
 
       if (!myCards.length) {
@@ -546,7 +610,7 @@ client.on(Events.InteractionCreate, async (i) => {
         return i.reply({ embeds: [ruiEmbed('…No.', 'You can’t gift to yourself 😒')] });
       }
 
-      // sicherstellen, dass der Empfänger in users.json existiert
+      // sicherstellen, dass der Empfänger existiert
       if (!users[targetUser.id]) {
         users[targetUser.id] = {
           id: targetUser.id,
@@ -585,7 +649,7 @@ client.on(Events.InteractionCreate, async (i) => {
           receiver.butterflies += amount;
         }
 
-        saveJson(USERS_FILE, users);
+        await saveJsonOrRemote(USERS_FILE, users);
 
         return i.reply({
           embeds: [ruiEmbed(
@@ -597,7 +661,7 @@ client.on(Events.InteractionCreate, async (i) => {
 
       // card
       if (what === 'card') {
-        const allUserCards = loadJson(USER_CARDS_FILE, {});
+        const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
         const senderCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
         const receiverCards = Array.isArray(allUserCards[targetUser.id]) ? allUserCards[targetUser.id] : [];
 
@@ -621,7 +685,7 @@ client.on(Events.InteractionCreate, async (i) => {
 
         allUserCards[id] = senderCards;
         allUserCards[targetUser.id] = receiverCards;
-        saveJson(USER_CARDS_FILE, allUserCards);
+        await saveJsonOrRemote(USER_CARDS_FILE, allUserCards);
 
         return i.reply({
           embeds: [ruiEmbed(
@@ -631,7 +695,6 @@ client.on(Events.InteractionCreate, async (i) => {
         });
       }
 
-      // falls jemand was schreibt was wir nicht kennen
       return i.reply({ embeds: [ruiEmbed('Unknown thing', 'You can gift `coins`, `butterflies` or `card`.')] });
     }
 
@@ -657,7 +720,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const ctype = i.options.getString('type');
       const droppable = i.options.getBoolean('droppable');
 
-      const cards = loadJson(CARDS_FILE, []);
+      const cards = await loadJsonOrRemote(CARDS_FILE, []);
 
       if (cards.find(c => c.id === cardId)) {
         return i.reply({
@@ -679,7 +742,7 @@ client.on(Events.InteractionCreate, async (i) => {
       };
 
       cards.push(newCard);
-      saveJson(CARDS_FILE, cards);
+      await saveJsonOrRemote(CARDS_FILE, cards);
 
       return i.reply({
         embeds: [ruiEmbed(
@@ -690,98 +753,98 @@ client.on(Events.InteractionCreate, async (i) => {
     }
 
     /* /drop */
-if (i.commandName === 'drop') {
-  const cards = loadJson(CARDS_FILE, []);
-  if (!cards.length) {
-    return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
-  }
+    if (i.commandName === 'drop') {
+      const cards = await loadJsonOrRemote(CARDS_FILE, []);
+      if (!cards.length) {
+        return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
+      }
 
-  const now = Date.now();
+      const now = Date.now();
 
-  // wenn noch eine Auswahl offen ist → die gleiche nochmal zeigen
-  if (u.pendingDrop && u.pendingDrop.expiresAt && now < u.pendingDrop.expiresAt) {
-    const opts = u.pendingDrop.cards;
+      // wenn noch eine Auswahl offen ist
+      if (u.pendingDrop && u.pendingDrop.expiresAt && now < u.pendingDrop.expiresAt) {
+        const opts = u.pendingDrop.cards;
 
-    // Buttons für 1 / 2 / 3
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
-    );
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
+        );
 
-    // Bilder aus den URLs bauen
-    const files = opts.map((c, idx) => ({
-      attachment: c.image,
-      name: `drop_${idx + 1}.png`
-    }));
+        const files = opts.map((c, idx) => ({
+          attachment: c.image,
+          name: `drop_${idx + 1}.png`
+        }));
 
-    // kleine Info oben drüber
-    return i.reply({
-      content: `Choose **one** of the 3 cards below:\n1️⃣ ${opts[0].group} — ${opts[0].member}\n2️⃣ ${opts[1].group} — ${opts[1].member}\n3️⃣ ${opts[2].group} — ${opts[2].member}`,
-      files,
-      components: [row],
-      ephemeral: true
-    });
-  }
+        return i.reply({
+          content: `Choose **one** of the 3 cards below:\n1️⃣ ${opts[0].group} — ${opts[0].member}\n2️⃣ ${opts[1].group} — ${opts[1].member}\n3️⃣ ${opts[2].group} — ${opts[2].member}`,
+          files,
+          components: [row],
+          ephemeral: true
+        });
+      }
 
-  // richtiger Cooldown (nachdem er ausgewählt hat)
-  if (u.lastDrop) {
-    const diff = now - new Date(u.lastDrop).getTime();
-    const COOLDOWN = 60 * 1000; // 1 Minute
-    if (diff < COOLDOWN) {
-      const left = Math.ceil((COOLDOWN - diff) / 1000);
+      // cooldown
+      if (u.lastDrop) {
+        const diff = now - new Date(u.lastDrop).getTime();
+        const COOLDOWN = 60 * 1000;
+        if (diff < COOLDOWN) {
+          const left = Math.ceil((COOLDOWN - diff) / 1000);
+          return i.reply({
+            embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)],
+            ephemeral: true
+          });
+        }
+      }
+
+      const boostType = getActiveBoost(u);
+      const pulled = [];
+
+      for (let n = 0; n < 3; n++) {
+        const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, boostType);
+
+        const pool = cards.filter(
+          c => c.rarity === rarity && c.droppable !== false
+        );
+
+        const finalPool = pool.length
+          ? pool
+          : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
+
+        const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
+        pulled.push({ ...chosen });
+      }
+
+      u.pendingDrop = {
+        cards: pulled,
+        expiresAt: now + 60 * 1000
+      };
+      await saveJsonOrRemote(USERS_FILE, users);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
+      );
+
+      const files = pulled.map((c, idx) => ({
+        attachment: c.image,
+        name: `drop_${idx + 1}.png`
+      }));
+
       return i.reply({
-        embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)],
+        content: `${boostType ? `Drop (boost: ${boostType})` : 'Drop'} – choose **one**:\n1️⃣ ${pulled[0].group} — ${pulled[0].member}\n2️⃣ ${pulled[1].group} — ${pulled[1].member}\n3️⃣ ${pulled[2].group} — ${pulled[2].member}`,
+        files,
+        components: [row],
         ephemeral: true
       });
     }
+
+  } catch (err) {
+    console.error(err);
+    return i.reply({ embeds: [ruiEmbed('Error', 'Something went wrong in Rui. Check Render for details.')] });
   }
-
-  const boostType = getActiveBoost(u);
-  const pulled = [];
-
-  for (let n = 0; n < 3; n++) {
-    const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, boostType);
-
-    const pool = cards.filter(
-      c => c.rarity === rarity && c.droppable !== false
-    );
-
-    const finalPool = pool.length
-      ? pool
-      : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
-
-    const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
-    pulled.push({ ...chosen });
-  }
-
-  // pending speichern (damit der Button-Handler weiß, welche 3)
-  u.pendingDrop = {
-    cards: pulled,
-    expiresAt: now + 60 * 1000 // 60 Sek Auswahlzeit
-  };
-  saveJson(USERS_FILE, users);
-
-  // Buttons für 1 / 2 / 3
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
-  );
-
-  // Bilder in einer Message – so wie dein Screenshot
-  const files = pulled.map((c, idx) => ({
-    attachment: c.image,
-    name: `drop_${idx + 1}.png`
-  }));
-
-  return i.reply({
-    content: `${boostType ? `Drop (boost: ${boostType})` : 'Drop'} – choose **one**:\n1️⃣ ${pulled[0].group} — ${pulled[0].member}\n2️⃣ ${pulled[1].group} — ${pulled[1].member}\n3️⃣ ${pulled[2].group} — ${pulled[2].member}`,
-    files,
-    components: [row],
-    ephemeral: true
-  });
-}
+});
 
 /* ----------------------------------------------------
    Render keep-alive
