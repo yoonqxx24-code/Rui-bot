@@ -1,7 +1,18 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Events, EmbedBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const {
+  Client,
+  GatewayIntentBits,
+  Events,
+  EmbedBuilder,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require('discord.js');
 
 // Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -260,6 +271,57 @@ client.once(Events.ClientReady, async (c) => {
 });
 
 client.on(Events.InteractionCreate, async (i) => {
+  /* ---------------------- BUTTONS ---------------------- */
+  if (i.isButton()) {
+    // nur Drop-Buttons
+    if (i.customId.startsWith('drop_pick_')) {
+      const users = loadJson(USERS_FILE, {});
+      const id = i.user.id;
+      const u = users[id];
+
+      if (!u || !u.pendingDrop) {
+        return i.reply({ content: 'You have no active drop.', ephemeral: true });
+      }
+
+      const now = Date.now();
+      if (u.pendingDrop.expiresAt && now > u.pendingDrop.expiresAt) {
+        delete u.pendingDrop;
+        saveJson(USERS_FILE, users);
+        return i.reply({ content: 'Your drop expired. Use /drop again.', ephemeral: true });
+      }
+
+      const idx = parseInt(i.customId.split('_').pop(), 10);
+      const cards = u.pendingDrop.cards || [];
+      if (!cards[idx]) {
+        return i.reply({ content: 'This card is not available anymore.', ephemeral: true });
+      }
+
+      const chosen = cards[idx];
+
+      // Karte ins Inventar
+      const allUserCards = loadJson(USER_CARDS_FILE, {});
+      if (!Array.isArray(allUserCards[id])) allUserCards[id] = [];
+      allUserCards[id].push(chosen);
+      saveJson(USER_CARDS_FILE, allUserCards);
+
+      // pending weg + cooldown starten
+      u.pendingDrop = null;
+      u.lastDrop = new Date().toISOString();
+      saveJson(USERS_FILE, users);
+
+      return i.reply({
+        embeds: [ruiEmbed(
+          'Card claimed',
+          `You claimed **${chosen.id}** (${chosen.group} — ${chosen.member}) • **${chosen.rarity}**`
+        )],
+        ephemeral: true
+      });
+    }
+
+    return;
+  }
+  /* ------------------- END BUTTONS --------------------- */
+
   if (!i.isChatInputCommand()) return;
 
   try {
@@ -277,7 +339,9 @@ client.on(Events.InteractionCreate, async (i) => {
         lastDaily: null,
         lastWeekly: null,
         lastMonthly: null,
-        lastWork: null
+        lastWork: null,
+        lastDrop: null,
+        pendingDrop: null
       };
       saveJson(USERS_FILE, users);
     }
@@ -302,7 +366,9 @@ client.on(Events.InteractionCreate, async (i) => {
         lastDaily: null,
         lastWeekly: null,
         lastMonthly: null,
-        lastWork: null
+        lastWork: null,
+        lastDrop: null,
+        pendingDrop: null
       };
       saveJson(USERS_FILE, users);
       return i.reply({ embeds: [ruiEmbed('Profile created', `Hi ${name}. Your collector profile has been created.`)] });
@@ -491,7 +557,9 @@ client.on(Events.InteractionCreate, async (i) => {
           lastDaily: null,
           lastWeekly: null,
           lastMonthly: null,
-          lastWork: null
+          lastWork: null,
+          lastDrop: null,
+          pendingDrop: null
         };
       }
 
@@ -628,6 +696,46 @@ client.on(Events.InteractionCreate, async (i) => {
         return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
       }
 
+      const now = Date.now();
+
+      // wenn noch eine Auswahl offen ist → die gleiche nochmal zeigen
+      if (u.pendingDrop && u.pendingDrop.expiresAt && now < u.pendingDrop.expiresAt) {
+        const opts = u.pendingDrop.cards;
+        const embeds = opts.map((c, idx) => {
+          const e = new EmbedBuilder()
+            .setTitle(`Card ${idx + 1}`)
+            .setDescription(`${c.id} • ${c.group} — ${c.member} • **${c.rarity}**${c.version ? ` • ${c.version}` : ''}`)
+            .setColor(0xFFB6C1);
+          if (c.image) e.setImage(c.image);
+          return e;
+        });
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
+        );
+
+        return i.reply({
+          embeds,
+          components: [row],
+          ephemeral: true
+        });
+      }
+
+      // richtiger Cooldown (nachdem er ausgewählt hat)
+      if (u.lastDrop) {
+        const diff = now - new Date(u.lastDrop).getTime();
+        const COOLDOWN = 60 * 1000; // 1 Minute
+        if (diff < COOLDOWN) {
+          const left = Math.ceil((COOLDOWN - diff) / 1000);
+          return i.reply({
+            embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)],
+            ephemeral: true
+          });
+        }
+      }
+
       const boostType = getActiveBoost(u);
       const pulled = [];
 
@@ -646,15 +754,32 @@ client.on(Events.InteractionCreate, async (i) => {
         pulled.push({ ...chosen });
       }
 
+      // pending speichern
+      u.pendingDrop = {
+        cards: pulled,
+        expiresAt: now + 60 * 1000 // 60 Sek Auswahlzeit
+      };
+      saveJson(USERS_FILE, users);
+
+      const embeds = pulled.map((c, idx) => {
+        const e = new EmbedBuilder()
+          .setTitle(`Card ${idx + 1}`)
+          .setDescription(`${c.id} • ${c.group} — ${c.member} • **${c.rarity}**${c.version ? ` • ${c.version}` : ''}`)
+          .setColor(0xFFB6C1);
+        if (c.image) e.setImage(c.image);
+        return e;
+      });
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
+      );
+
       return i.reply({
-        embeds: [ruiEmbed(
-          boostType ? `Drop (boost: ${boostType})` : 'Drop',
-          boostType ? 'Your boost affected the pool.' : 'Three cards appeared.',
-          pulled.map((c, idx) => ({
-            name: `Card ${idx + 1}`,
-            value: `${c.id} • ${c.group} — ${c.member} • **${c.rarity}**${c.version ? ` • ${c.version}` : ''}`
-          }))
-        )]
+        embeds,
+        components: [row],
+        ephemeral: true
       });
     }
 
