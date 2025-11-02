@@ -15,7 +15,6 @@ const CARDS_FILE = path.join(__dirname, 'cards.json');
    BOOST / DROP – Hilfsdaten
 ---------------------------------------------------- */
 
-// Basis-Drop-Chancen (kannst du später ändern)
 const BASE_RARITY_WEIGHTS = {
   common: 44,
   rare: 20,
@@ -26,7 +25,6 @@ const BASE_RARITY_WEIGHTS = {
   limited: 3
 };
 
-// wie ein Boost die Chancen verschiebt
 const BOOST_MULTIPLIERS = {
   small: {
     common: 0.9,
@@ -57,7 +55,6 @@ const BOOST_MULTIPLIERS = {
   }
 };
 
-// aktiven Boost vom User holen (und abgelaufene löschen)
 function getActiveBoost(user) {
   if (!user || !user.activeBoost) return null;
   if (!user.activeBoost.expiresAt) return null;
@@ -65,10 +62,9 @@ function getActiveBoost(user) {
     delete user.activeBoost;
     return null;
   }
-  return user.activeBoost.type; // 'small' | 'normal' | 'mega'
+  return user.activeBoost.type;
 }
 
-// eine Rarity ziehen, evtl. mit Boost
 function pickRarityWithBoost(baseWeights, boostName = null) {
   const weights = { ...baseWeights };
 
@@ -93,7 +89,7 @@ function pickRarityWithBoost(baseWeights, boostName = null) {
 }
 
 /* ----------------------------------------------------
-   JSON helper
+   Helpers
 ---------------------------------------------------- */
 function ruiEmbed(title, desc, fields = []) {
   const e = new EmbedBuilder()
@@ -119,7 +115,7 @@ function rand(min, max) {
 }
 
 /* ----------------------------------------------------
-   Auto Slash Commands
+   Slash Commands registrieren
 ---------------------------------------------------- */
 async function registerCommands() {
   const commands = [
@@ -131,7 +127,68 @@ async function registerCommands() {
     new SlashCommandBuilder().setName('monthly').setDescription('Claim your monthly reward'),
     new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards'),
     new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards'),
-    new SlashCommandBuilder().setName('inventory').setDescription('Show your collected cards')
+    new SlashCommandBuilder().setName('inventory').setDescription('Show your collected cards'),
+    // 👇 STAFF: addcard
+    new SlashCommandBuilder()
+      .setName('addcard')
+      .setDescription('STAFF ONLY – create a new card')
+      .addStringOption(o =>
+        o.setName('card_id')
+          .setDescription('Unique card ID (e.g. xlov-rui-001)')
+          .setRequired(true)
+      )
+      .addStringOption(o =>
+        o.setName('rarity')
+          .setDescription('Card rarity')
+          .setRequired(true)
+          .addChoices(
+            { name: 'common', value: 'common' },
+            { name: 'rare', value: 'rare' },
+            { name: 'super_rare', value: 'super_rare' },
+            { name: 'ultra_rare', value: 'ultra_rare' },
+            { name: 'legendary', value: 'legendary' }
+          )
+      )
+      .addStringOption(o =>
+        o.setName('group')
+          .setDescription('Group name (XLOV, etc.)')
+          .setRequired(true)
+      )
+      .addStringOption(o =>
+        o.setName('idol')
+          .setDescription('Idol / member name')
+          .setRequired(true)
+      )
+      .addStringOption(o =>
+        o.setName('era')
+          .setDescription('Era / concept (e.g. Bloom, Winter)')
+          .setRequired(false)
+      )
+      .addStringOption(o =>
+        o.setName('version')
+          .setDescription('Version inside that era (e.g. Ver. A, PC 03)')
+          .setRequired(false)
+      )
+      .addStringOption(o =>
+        o.setName('image')
+          .setDescription('Image URL')
+          .setRequired(false)
+      )
+      .addStringOption(o =>
+        o.setName('ctype')
+          .setDescription('Card type')
+          .setRequired(true)
+          .addChoices(
+            { name: 'Regular', value: 'reg' },
+            { name: 'Event', value: 'event' },
+            { name: 'Limited', value: 'limited' }
+          )
+      )
+      .addBooleanOption(o =>
+        o.setName('droppable')
+          .setDescription('Should this card appear in drops/packs?')
+          .setRequired(true)
+      )
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -193,12 +250,12 @@ client.on(Events.InteractionCreate, async (i) => {
     }
     const u = users[id];
 
-    /* ---------------- /ping ---------------- */
+    /* /ping */
     if (i.commandName === 'ping') {
       return i.reply({ embeds: [ruiEmbed('Pong', 'Rui is awake.')] });
     }
 
-    /* ---------------- /start ---------------- */
+    /* /start */
     if (i.commandName === 'start') {
       if (u && u.created) {
         return i.reply({ embeds: [ruiEmbed('Profile already exists', `Oh! Seems like you already created a profile, ${name}. Have fun playing.`)] });
@@ -218,7 +275,7 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ embeds: [ruiEmbed('Profile created', `Hi ${name}. Your collector profile has been created.`)] });
     }
 
-    /* ---------------- /balance ---------------- */
+    /* /balance */
     if (i.commandName === 'balance') {
       const allUserCards = loadJson(USER_CARDS_FILE, {});
       const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
@@ -235,7 +292,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* ---------------- /daily ---------------- */
+    /* /daily */
     if (i.commandName === 'daily') {
       const DAY = 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -263,7 +320,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* ---------------- /weekly ---------------- */
+    /* /weekly */
     if (i.commandName === 'weekly') {
       const WEEK = 7 * 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -291,7 +348,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* ---------------- /monthly ---------------- */
+    /* /monthly */
     if (i.commandName === 'monthly') {
       const MONTH = 30 * 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -319,7 +376,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* ---------------- /work ---------------- */
+    /* /work */
     if (i.commandName === 'work') {
       const now = Date.now();
       const COOLDOWN = 15 * 60 * 1000;
@@ -346,7 +403,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* ---------------- /inventory ---------------- */
+    /* /inventory */
     if (i.commandName === 'inventory') {
       const allUserCards = loadJson(USER_CARDS_FILE, {});
       const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
@@ -360,7 +417,6 @@ client.on(Events.InteractionCreate, async (i) => {
         });
       }
 
-      // wir zeigen erstmal nur die ersten 10
       const firstTen = myCards.slice(0, 10);
 
       return i.reply({
@@ -376,7 +432,61 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* ---------------- /drop (mit Boost) ---------------- */
+    /* /addcard (STAFF) */
+    if (i.commandName === 'addcard') {
+      const staffEnv = process.env.STAFF_IDS || '';
+      const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
+
+      if (!staffList.includes(id)) {
+        return i.reply({
+          embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')],
+          ephemeral: true
+        });
+      }
+
+      const cardId = i.options.getString('card_id');
+      const rarity = i.options.getString('rarity');
+      const group = i.options.getString('group');
+      const idol = i.options.getString('idol');
+      const era = i.options.getString('era') || null;
+      const version = i.options.getString('version') || null;
+      const image = i.options.getString('image') || null;
+      const ctype = i.options.getString('ctype');
+      const droppable = i.options.getBoolean('droppable');
+
+      const cards = loadJson(CARDS_FILE, []);
+
+      if (cards.find(c => c.id === cardId)) {
+        return i.reply({
+          embeds: [ruiEmbed('Already exists', `There is already a card with ID **${cardId}**.`)],
+          ephemeral: true
+        });
+      }
+
+      const newCard = {
+        id: cardId,
+        group: group,
+        member: idol,
+        era: era,
+        version: version,
+        image: image,
+        rarity: rarity,
+        type: ctype,      // reg | event | limited
+        droppable: droppable
+      };
+
+      cards.push(newCard);
+      saveJson(CARDS_FILE, cards);
+
+      return i.reply({
+        embeds: [ruiEmbed(
+          'Card created',
+          `New card was added.\nID: **${cardId}**\nGroup: **${group}**\nIdol: **${idol}**\nRarity: **${rarity}**\nType: **${ctype}**\nDroppable: **${droppable ? 'yes' : 'no'}**\nEra: **${era || '—'}**\nVersion: **${version || '—'}**`
+        )]
+      });
+    }
+
+    /* /drop (mit droppable check) */
     if (i.commandName === 'drop') {
       const cards = loadJson(CARDS_FILE, []);
       if (!cards.length) {
@@ -384,12 +494,19 @@ client.on(Events.InteractionCreate, async (i) => {
       }
 
       const boostType = getActiveBoost(u);
-
       const pulled = [];
+
       for (let n = 0; n < 3; n++) {
         const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, boostType);
-        const pool = cards.filter(c => c.rarity === rarity);
-        const finalPool = pool.length ? pool : cards.filter(c => c.rarity === 'common');
+
+        const pool = cards.filter(
+          c => c.rarity === rarity && c.droppable !== false
+        );
+
+        const finalPool = pool.length
+          ? pool
+          : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
+
         const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
         pulled.push({ ...chosen });
       }
@@ -400,7 +517,7 @@ client.on(Events.InteractionCreate, async (i) => {
           boostType ? 'Your boost affected the pool.' : 'Three cards appeared.',
           pulled.map((c, idx) => ({
             name: `Card ${idx + 1}`,
-            value: `${c.id} • ${c.group} — ${c.member} • **${c.rarity}**`
+            value: `${c.id} • ${c.group} — ${c.member} • **${c.rarity}**${c.version ? ` • ${c.version}` : ''}`
           }))
         )]
       });
