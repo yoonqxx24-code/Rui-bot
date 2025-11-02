@@ -690,104 +690,98 @@ client.on(Events.InteractionCreate, async (i) => {
     }
 
     /* /drop */
-    if (i.commandName === 'drop') {
-      const cards = loadJson(CARDS_FILE, []);
-      if (!cards.length) {
-        return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
-      }
+if (i.commandName === 'drop') {
+  const cards = loadJson(CARDS_FILE, []);
+  if (!cards.length) {
+    return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
+  }
 
-      const now = Date.now();
+  const now = Date.now();
 
-      // wenn noch eine Auswahl offen ist → die gleiche nochmal zeigen
-      if (u.pendingDrop && u.pendingDrop.expiresAt && now < u.pendingDrop.expiresAt) {
-        const opts = u.pendingDrop.cards;
-        const embeds = opts.map((c, idx) => {
-          const e = new EmbedBuilder()
-            .setTitle(`Card ${idx + 1}`)
-            .setDescription(`${c.id} • ${c.group} — ${c.member} • **${c.rarity}**${c.version ? ` • ${c.version}` : ''}`)
-            .setColor(0xFFB6C1);
-          if (c.image) e.setImage(c.image);
-          return e;
-        });
+  // wenn noch eine Auswahl offen ist → die gleiche nochmal zeigen
+  if (u.pendingDrop && u.pendingDrop.expiresAt && now < u.pendingDrop.expiresAt) {
+    const opts = u.pendingDrop.cards;
 
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
-        );
+    // Buttons für 1 / 2 / 3
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
+    );
 
-        return i.reply({
-          embeds,
-          components: [row],
-          ephemeral: true
-        });
-      }
+    // Bilder aus den URLs bauen
+    const files = opts.map((c, idx) => ({
+      attachment: c.image,
+      name: `drop_${idx + 1}.png`
+    }));
 
-      // richtiger Cooldown (nachdem er ausgewählt hat)
-      if (u.lastDrop) {
-        const diff = now - new Date(u.lastDrop).getTime();
-        const COOLDOWN = 60 * 1000; // 1 Minute
-        if (diff < COOLDOWN) {
-          const left = Math.ceil((COOLDOWN - diff) / 1000);
-          return i.reply({
-            embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)],
-            ephemeral: true
-          });
-        }
-      }
+    // kleine Info oben drüber
+    return i.reply({
+      content: `Choose **one** of the 3 cards below:\n1️⃣ ${opts[0].group} — ${opts[0].member}\n2️⃣ ${opts[1].group} — ${opts[1].member}\n3️⃣ ${opts[2].group} — ${opts[2].member}`,
+      files,
+      components: [row],
+      ephemeral: true
+    });
+  }
 
-      const boostType = getActiveBoost(u);
-      const pulled = [];
-
-      for (let n = 0; n < 3; n++) {
-        const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, boostType);
-
-        const pool = cards.filter(
-          c => c.rarity === rarity && c.droppable !== false
-        );
-
-        const finalPool = pool.length
-          ? pool
-          : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
-
-        const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
-        pulled.push({ ...chosen });
-      }
-
-      // pending speichern
-      u.pendingDrop = {
-        cards: pulled,
-        expiresAt: now + 60 * 1000 // 60 Sek Auswahlzeit
-      };
-      saveJson(USERS_FILE, users);
-
-      const embeds = pulled.map((c, idx) => {
-        const e = new EmbedBuilder()
-          .setTitle(`Card ${idx + 1}`)
-          .setDescription(`${c.id} • ${c.group} — ${c.member} • **${c.rarity}**${c.version ? ` • ${c.version}` : ''}`)
-          .setColor(0xFFB6C1);
-        if (c.image) e.setImage(c.image);
-        return e;
-      });
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
-      );
-
+  // richtiger Cooldown (nachdem er ausgewählt hat)
+  if (u.lastDrop) {
+    const diff = now - new Date(u.lastDrop).getTime();
+    const COOLDOWN = 60 * 1000; // 1 Minute
+    if (diff < COOLDOWN) {
+      const left = Math.ceil((COOLDOWN - diff) / 1000);
       return i.reply({
-        embeds,
-        components: [row],
+        embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)],
         ephemeral: true
       });
     }
-
-  } catch (err) {
-    console.error(err);
-    return i.reply({ embeds: [ruiEmbed('Error', 'Something went wrong in Rui. Check Render for details.')] });
   }
-});
+
+  const boostType = getActiveBoost(u);
+  const pulled = [];
+
+  for (let n = 0; n < 3; n++) {
+    const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, boostType);
+
+    const pool = cards.filter(
+      c => c.rarity === rarity && c.droppable !== false
+    );
+
+    const finalPool = pool.length
+      ? pool
+      : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
+
+    const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
+    pulled.push({ ...chosen });
+  }
+
+  // pending speichern (damit der Button-Handler weiß, welche 3)
+  u.pendingDrop = {
+    cards: pulled,
+    expiresAt: now + 60 * 1000 // 60 Sek Auswahlzeit
+  };
+  saveJson(USERS_FILE, users);
+
+  // Buttons für 1 / 2 / 3
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
+  );
+
+  // Bilder in einer Message – so wie dein Screenshot
+  const files = pulled.map((c, idx) => ({
+    attachment: c.image,
+    name: `drop_${idx + 1}.png`
+  }));
+
+  return i.reply({
+    content: `${boostType ? `Drop (boost: ${boostType})` : 'Drop'} – choose **one**:\n1️⃣ ${pulled[0].group} — ${pulled[0].member}\n2️⃣ ${pulled[1].group} — ${pulled[1].member}\n3️⃣ ${pulled[2].group} — ${pulled[2].member}`,
+    files,
+    components: [row],
+    ephemeral: true
+  });
+}
 
 /* ----------------------------------------------------
    Render keep-alive
