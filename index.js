@@ -129,77 +129,67 @@ async function registerCommands() {
     new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards'),
     new SlashCommandBuilder().setName('inventory').setDescription('Show your collected cards'),
     new SlashCommandBuilder()
-  .setName('addcard')
-  .setDescription('STAFF ONLY – create a new card')
-
-  // 1. basic identity
-  .addStringOption(o =>
-    o.setName('card_id')
-     .setDescription('Unique card ID (e.g. xlov-rui-001)')
-     .setRequired(true)
-  )
-  .addStringOption(o =>
-    o.setName('group')
-     .setDescription('Group name (XLOV, etc.)')
-     .setRequired(true)
-  )
-  .addStringOption(o =>
-    o.setName('idol')
-     .setDescription('Idol / member name')
-     .setRequired(true)
-  )
-
-  // 2. rarity + type
-  .addStringOption(o =>
-    o.setName('rarity')
-     .setDescription('Card rarity')
-     .setRequired(true)
-     .addChoices(
-       { name: 'common', value: 'common' },
-       { name: 'rare', value: 'rare' },
-       { name: 'super_rare', value: 'super_rare' },
-       { name: 'ultra_rare', value: 'ultra_rare' },
-       { name: 'legendary', value: 'legendary' },
-       { name: 'event', value: 'event' },
-       { name: 'limited', value: 'limited' }
-     )
-  )
-  .addStringOption(o =>
-    o.setName('type')
-     .setDescription('Card type (reg, event, limited)')
-     .setRequired(true)
-     .addChoices(
-       { name: 'Regular', value: 'reg' },
-       { name: 'Event', value: 'event' },
-       { name: 'Limited', value: 'limited' }
-     )
-  )
-
-  // 3. era + version
-  .addStringOption(o =>
-    o.setName('era')
-     .setDescription('Era / concept (e.g. Bloom, Winter)')
-     .setRequired(true)
-  )
-  .addStringOption(o =>
-    o.setName('version')
-     .setDescription('Version inside that era (e.g. Ver. A, PC 03)')
-     .setRequired(true)
-  )
-
-  // 4. image
-  .addStringOption(o =>
-    o.setName('image')
-     .setDescription('Image URL')
-     .setRequired(true)
-  )
-
-  // 5. droppable
-  .addBooleanOption(o =>
-    o.setName('droppable')
-     .setDescription('Should this card drop in /drop?')
-     .setRequired(true)
-  )
+      .setName('addcard')
+      .setDescription('STAFF ONLY – create a new card')
+      .addStringOption(o =>
+        o.setName('card_id')
+          .setDescription('Unique card ID (e.g. xlov-rui-001)')
+          .setRequired(true)
+      )
+      .addStringOption(o =>
+        o.setName('group')
+          .setDescription('Group name (XLOV, etc.)')
+          .setRequired(true)
+      )
+      .addStringOption(o =>
+        o.setName('idol')
+          .setDescription('Idol / member name')
+          .setRequired(true)
+      )
+      .addStringOption(o =>
+        o.setName('rarity')
+          .setDescription('Card rarity')
+          .setRequired(true)
+          .addChoices(
+            { name: 'common', value: 'common' },
+            { name: 'rare', value: 'rare' },
+            { name: 'super_rare', value: 'super_rare' },
+            { name: 'ultra_rare', value: 'ultra_rare' },
+            { name: 'legendary', value: 'legendary' },
+            { name: 'event', value: 'event' },
+            { name: 'limited', value: 'limited' }
+          )
+      )
+      .addStringOption(o =>
+        o.setName('type')
+          .setDescription('Card type (reg, event, limited)')
+          .setRequired(true)
+          .addChoices(
+            { name: 'Regular', value: 'reg' },
+            { name: 'Event', value: 'event' },
+            { name: 'Limited', value: 'limited' }
+          )
+      )
+      .addStringOption(o =>
+        o.setName('era')
+          .setDescription('Era / concept (e.g. Bloom, Winter)')
+          .setRequired(true)
+      )
+      .addStringOption(o =>
+        o.setName('version')
+          .setDescription('Version inside that era (e.g. Ver. A, PC 03)')
+          .setRequired(true)
+      )
+      .addStringOption(o =>
+        o.setName('image')
+          .setDescription('Image URL')
+          .setRequired(true)
+      )
+      .addBooleanOption(o =>
+        o.setName('droppable')
+          .setDescription('Should this card drop in /drop?')
+          .setRequired(true)
+      )
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -261,12 +251,12 @@ client.on(Events.InteractionCreate, async (i) => {
     }
     const u = users[id];
 
-    /* /ping */
+    // /ping
     if (i.commandName === 'ping') {
       return i.reply({ embeds: [ruiEmbed('Pong', 'Rui is awake.')] });
     }
 
-    /* /start */
+    // /start
     if (i.commandName === 'start') {
       if (u && u.created) {
         return i.reply({ embeds: [ruiEmbed('Profile already exists', `Oh! Seems like you already created a profile, ${name}. Have fun playing.`)] });
@@ -286,7 +276,7 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ embeds: [ruiEmbed('Profile created', `Hi ${name}. Your collector profile has been created.`)] });
     }
 
-    /* /balance */
+    // /balance
     if (i.commandName === 'balance') {
       const allUserCards = loadJson(USER_CARDS_FILE, {});
       const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
@@ -303,7 +293,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* /daily */
+    // /daily
     if (i.commandName === 'daily') {
       const DAY = 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -331,7 +321,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* /weekly */
+    // /weekly
     if (i.commandName === 'weekly') {
       const WEEK = 7 * 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -359,7 +349,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* /monthly */
+    // /monthly
     if (i.commandName === 'monthly') {
       const MONTH = 30 * 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -387,7 +377,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* /work */
+    // /work
     if (i.commandName === 'work') {
       const now = Date.now();
       const COOLDOWN = 15 * 60 * 1000;
@@ -414,7 +404,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* /inventory */
+    // /inventory
     if (i.commandName === 'inventory') {
       const allUserCards = loadJson(USER_CARDS_FILE, {});
       const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
@@ -443,7 +433,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* /addcard (STAFF) */
+    // /addcard (STAFF)
     if (i.commandName === 'addcard') {
       const staffEnv = process.env.STAFF_IDS || '';
       const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
@@ -462,7 +452,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const era = i.options.getString('era') || null;
       const version = i.options.getString('version') || null;
       const image = i.options.getString('image') || null;
-      const ctype = i.options.getString('ctype');
+      const ctype = i.options.getString('type'); // 👈  HIER war dein Tippfehler
       const droppable = i.options.getBoolean('droppable');
 
       const cards = loadJson(CARDS_FILE, []);
@@ -482,7 +472,7 @@ client.on(Events.InteractionCreate, async (i) => {
         version: version,
         image: image,
         rarity: rarity,
-        type: ctype,      // reg | event | limited
+        type: ctype,
         droppable: droppable
       };
 
@@ -497,7 +487,7 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* /drop (mit droppable check) */
+    // /drop
     if (i.commandName === 'drop') {
       const cards = loadJson(CARDS_FILE, []);
       if (!cards.length) {
