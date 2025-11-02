@@ -22,66 +22,10 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const USERS_FILE = path.join(__dirname, 'users.json');
 const USER_CARDS_FILE = path.join(__dirname, 'user_cards.json');
 const CARDS_FILE = path.join(__dirname, 'cards.json');
+
 /* ----------------------------------------------------
    Remote + lokal speichern / laden
----------------------------------------------------- */
-
-async function loadJsonOrRemote(file, fallback) {
-  const BIN_KEY = process.env.JSONBIN_KEY;
-  const BIN_ID = process.env.JSONBIN_ID;
-
-  // Wenn keine JSONBin-Daten angegeben sind → lokal lesen
-  if (!BIN_KEY || !BIN_ID) {
-    if (!fs.existsSync(file)) return fallback;
-    try {
-      return JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-      return fallback;
-    }
-  }
-
-  // Sonst: JSONBin versuchen
-  try {
-    const res = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-      headers: {
-        'X-Master-Key': BIN_KEY
-      }
-    });
-    return res.data.record || fallback;
-  } catch (err) {
-    console.error('JSONBin load failed, fallback to local:', err.message);
-    if (!fs.existsSync(file)) return fallback;
-    try {
-      return JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-      return fallback;
-    }
-  }
-}
-
-async function saveJsonOrRemote(file, data) {
-  const BIN_KEY = process.env.JSONBIN_KEY;
-  const BIN_ID = process.env.JSONBIN_ID;
-
-  // Immer lokal speichern (Backup)
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-
-  if (!BIN_KEY || !BIN_ID) return;
-
-  // Zusätzlich online speichern
-  try {
-    await axios.put(`https://api.jsonbin.io/v3/b/${BIN_ID}`, data, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Master-Key': BIN_KEY
-      }
-    });
-  } catch (err) {
-    console.error('JSONBin save failed:', err.message);
-  }
-}
-/* ----------------------------------------------------
-   Remote + lokal speichern / laden
+   (wir speichern ALLES in EINEM jsonbin: { users: ..., user_cards: ..., cards: ... })
 ---------------------------------------------------- */
 
 async function loadJsonOrRemote(file, fallback) {
@@ -100,10 +44,9 @@ async function loadJsonOrRemote(file, fallback) {
     const res = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
       headers: { 'X-Master-Key': BIN_KEY }
     });
-    // wir speichern ALLES in einem bin, deshalb prüfen wir ob da schon struktur ist
     const record = res.data.record;
     if (!record) return fallback;
-    // wenn wir explizit eine datei wollten, holen wir uns nur den teil
+
     if (file === USERS_FILE) return record.users ?? fallback;
     if (file === USER_CARDS_FILE) return record.user_cards ?? fallback;
     if (file === CARDS_FILE) return record.cards ?? fallback;
@@ -127,7 +70,7 @@ async function saveJsonOrRemote(file, data) {
   if (!BIN_KEY || !BIN_ID) return;
 
   try {
-    // erst aktuellen stand holen
+    // aktuellen stand holen
     let current = {};
     try {
       const res = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
@@ -199,6 +142,15 @@ const BOOST_MULTIPLIERS = {
   }
 };
 
+// 💰 Preise pro Rarity (event & limited ABSICHTLICH nicht drin → nicht kaufbar)
+const RARITY_PRICES = {
+  common: 200,
+  rare: 400,
+  super_rare: 650,
+  ultra_rare: 900,
+  legendary: 1200
+};
+
 function getActiveBoost(user) {
   if (!user || !user.activeBoost) return null;
   if (!user.activeBoost.expiresAt) return null;
@@ -262,6 +214,15 @@ async function registerCommands() {
     new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards'),
     new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards'),
     new SlashCommandBuilder().setName('inventory').setDescription('Show your collected cards'),
+    // NEW: /buy
+    new SlashCommandBuilder()
+      .setName('buy')
+      .setDescription('Buy a specific card by its card code')
+      .addStringOption(o =>
+        o.setName('card_id')
+          .setDescription('The card code (like xlov-rui-001)')
+          .setRequired(true)
+      ),
 
     // NEW: /gift
     new SlashCommandBuilder()
@@ -652,6 +613,65 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
+    /* /buy (card by code, price by rarity, event & limited gesperrt) */
+    if (i.commandName === 'buy') {
+      const cardId = i.options.getString('card_id');
+
+      const allCards = await loadJsonOrRemote(CARDS_FILE, []);
+      const wanted = allCards.find(c => c.id === cardId);
+
+      if (!wanted) {
+        return i.reply({
+          embeds: [ruiEmbed('Not found', `There is no card with ID **${cardId}**.`)],
+          ephemeral: true
+        });
+      }
+
+      const rarity = wanted.rarity || 'common';
+
+      // event / limited sperren
+      if (rarity === 'event' || rarity === 'limited') {
+        return i.reply({
+          embeds: [ruiEmbed('Not buyable', `Cards with rarity **${rarity}** cannot be bought. Try drops or events.`)],
+          ephemeral: true
+        });
+      }
+
+      const price = RARITY_PRICES[rarity];
+      if (!price) {
+        return i.reply({
+          embeds: [ruiEmbed('Not buyable', `Cards with rarity **${rarity}** cannot be bought.`)],
+          ephemeral: true
+        });
+      }
+
+      if (u.coins < price) {
+        return i.reply({
+          embeds: [ruiEmbed('Not enough coins', `This card costs **${price}** 🪙 but you only have **${u.coins}**.`)],
+          ephemeral: true
+        });
+      }
+
+      // coins abziehen
+      u.coins -= price;
+
+      // karte ins inventar
+      const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
+      if (!Array.isArray(allUserCards[id])) allUserCards[id] = [];
+      allUserCards[id].push(wanted);
+
+      // speichern
+      await saveJsonOrRemote(USERS_FILE, users);
+      await saveJsonOrRemote(USER_CARDS_FILE, allUserCards);
+
+      return i.reply({
+        embeds: [ruiEmbed(
+          'Card bought',
+          `You bought **${wanted.id}** (${wanted.group} — ${wanted.member}) • **${rarity}** for **${price}** 🪙`
+        )]
+      });
+    }
+
     /* /gift */
     if (i.commandName === 'gift') {
       const targetUser = i.options.getUser('target');
@@ -688,195 +708,139 @@ client.on(Events.InteractionCreate, async (i) => {
 
       // coins / butterflies
       if (what === 'coins' || what === 'butterflies') {
-        if (!amount || amount <= 0) {
-          return i.reply({ embeds: [ruiEmbed('Missing amount', 'Tell me how many you want to send.')] });
-        }
-
-        if (what === 'coins') {
-          if (u.coins < amount) {
-            return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.coins} coins.`)], ephemeral: true });
-          }
-          u.coins -= amount;
-          receiver.coins += amount;
-        } else {
-          if (u.butterflies < amount) {
-            return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.butterflies} butterflies.`)], ephemeral: true });
-          }
-          u.butterflies -= amount;
-          receiver.butterflies += amount;
-        }
-
-        await saveJsonOrRemote(USERS_FILE, users);
-
-        return i.reply({
-          embeds: [ruiEmbed(
-            'Gift sent',
-            `${name} sent **${amount}** ${what === 'coins' ? '🪙 coins' : '🦋 butterflies'} to ${targetUser.username}.`
-          )]
-        });
+      if (!amount || amount <= 0) {
+        return i.reply({ embeds: [ruiEmbed('Missing amount', 'Tell me how many you want to send.')] });
       }
 
-      // card
-      if (what === 'card') {
-        const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
-        const senderCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
-        const receiverCards = Array.isArray(allUserCards[targetUser.id]) ? allUserCards[targetUser.id] : [];
-
-        if (!cardId) {
-          return i.reply({
-            embeds: [ruiEmbed('Missing card', 'Tell me which card ID you want to send.')],
-            ephemeral: true
-          });
+      if (what === 'coins') {
+        if (u.coins < amount) {
+          return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.coins} coins.`)], ephemeral: true });
         }
-
-        const idx = senderCards.findIndex(c => c.id === cardId);
-        if (idx === -1) {
-          return i.reply({
-            embeds: [ruiEmbed('Not found', `You don’t own a card with ID **${cardId}**.`)],
-            ephemeral: true
-          });
+        u.coins -= amount;
+        receiver.coins += amount;
+      } else {
+        if (u.butterflies < amount) {
+          return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.butterflies} butterflies.`)], ephemeral: true });
         }
-
-        const cardToSend = senderCards.splice(idx, 1)[0];
-        receiverCards.push(cardToSend);
-
-        allUserCards[id] = senderCards;
-        allUserCards[targetUser.id] = receiverCards;
-        await saveJsonOrRemote(USER_CARDS_FILE, allUserCards);
-
-        return i.reply({
-          embeds: [ruiEmbed(
-            'Card sent',
-            `${name} sent **${cardToSend.id}** (${cardToSend.group} — ${cardToSend.member}) to ${targetUser.username}.`
-          )]
-        });
+        u.butterflies -= amount;
+        receiver.butterflies += amount;
       }
 
-      return i.reply({ embeds: [ruiEmbed('Unknown thing', 'You can gift `coins`, `butterflies` or `card`.')] });
-    }
-
-    /* /addcard (STAFF) */
-    if (i.commandName === 'addcard') {
-      const staffEnv = process.env.STAFF_IDS || '';
-      const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
-
-      if (!staffList.includes(id)) {
-        return i.reply({
-          embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')],
-          ephemeral: true
-        });
-      }
-
-      const cardId = i.options.getString('card_id');
-      const rarity = i.options.getString('rarity');
-      const group = i.options.getString('group');
-      const idol = i.options.getString('idol');
-      const era = i.options.getString('era') || null;
-      const version = i.options.getString('version') || null;
-      const image = i.options.getString('image') || null;
-      const ctype = i.options.getString('type');
-      const droppable = i.options.getBoolean('droppable');
-
-      const cards = await loadJsonOrRemote(CARDS_FILE, []);
-
-      if (cards.find(c => c.id === cardId)) {
-        return i.reply({
-          embeds: [ruiEmbed('Already exists', `There is already a card with ID **${cardId}**.`)],
-          ephemeral: true
-        });
-      }
-
-      const newCard = {
-        id: cardId,
-        group: group,
-        member: idol,
-        era: era,
-        version: version,
-        image: image,
-        rarity: rarity,
-        type: ctype,
-        droppable: droppable
-      };
-
-      cards.push(newCard);
-      await saveJsonOrRemote(CARDS_FILE, cards);
+      await saveJsonOrRemote(USERS_FILE, users);
 
       return i.reply({
         embeds: [ruiEmbed(
-          'Card created',
-          `New card was added.\nID: **${cardId}**\nGroup: **${group}**\nIdol: **${idol}**\nRarity: **${rarity}**\nType: **${ctype}**\nDroppable: **${droppable ? 'yes' : 'no'}**\nEra: **${era || '—'}**\nVersion: **${version || '—'}**`
+          'Gift sent',
+          `${name} sent **${amount}** ${what === 'coins' ? '🪙 coins' : '🦋 butterflies'} to ${targetUser.username}.`
         )]
       });
     }
 
-    /* /drop */
-    if (i.commandName === 'drop') {
-      const cards = await loadJsonOrRemote(CARDS_FILE, []);
-      if (!cards.length) {
-        return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
-      }
+    // card
+    if (what === 'card') {
+      const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
+      const senderCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
+      const receiverCards = Array.isArray(allUserCards[targetUser.id]) ? allUserCards[targetUser.id] : [];
 
-      const now = Date.now();
-
-      // wenn noch eine Auswahl offen ist
-      if (u.pendingDrop && u.pendingDrop.expiresAt && now < u.pendingDrop.expiresAt) {
-        const opts = u.pendingDrop.cards;
-
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
-        );
-
-        const files = opts.map((c, idx) => ({
-          attachment: c.image,
-          name: `drop_${idx + 1}.png`
-        }));
-
+      if (!cardId) {
         return i.reply({
-          content: `Choose **one** of the 3 cards below:\n1️⃣ ${opts[0].group} — ${opts[0].member}\n2️⃣ ${opts[1].group} — ${opts[1].member}\n3️⃣ ${opts[2].group} — ${opts[2].member}`,
-          files,
-          components: [row],
+          embeds: [ruiEmbed('Missing card', 'Tell me which card ID you want to send.')],
           ephemeral: true
         });
       }
 
-      // cooldown
-      if (u.lastDrop) {
-        const diff = now - new Date(u.lastDrop).getTime();
-        const COOLDOWN = 60 * 1000;
-        if (diff < COOLDOWN) {
-          const left = Math.ceil((COOLDOWN - diff) / 1000);
-          return i.reply({
-            embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)],
-            ephemeral: true
-          });
-        }
+      const idx = senderCards.findIndex(c => c.id === cardId);
+      if (idx === -1) {
+        return i.reply({
+          embeds: [ruiEmbed('Not found', `You don’t own a card with ID **${cardId}**.`)],
+          ephemeral: true
+        });
       }
 
-      const boostType = getActiveBoost(u);
-      const pulled = [];
+      const cardToSend = senderCards.splice(idx, 1)[0];
+      receiverCards.push(cardToSend);
 
-      for (let n = 0; n < 3; n++) {
-        const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, boostType);
+      allUserCards[id] = senderCards;
+      allUserCards[targetUser.id] = receiverCards;
+      await saveJsonOrRemote(USER_CARDS_FILE, allUserCards);
 
-        const pool = cards.filter(
-          c => c.rarity === rarity && c.droppable !== false
-        );
+      return i.reply({
+        embeds: [ruiEmbed(
+          'Card sent',
+          `${name} sent **${cardToSend.id}** (${cardToSend.group} — ${cardToSend.member}) to ${targetUser.username}.`
+        )]
+      });
+    }
 
-        const finalPool = pool.length
-          ? pool
-          : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
+    return i.reply({ embeds: [ruiEmbed('Unknown thing', 'You can gift `coins`, `butterflies` or `card`.')] });
+  }
 
-        const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
-        pulled.push({ ...chosen });
-      }
+  /* /addcard (STAFF) */
+  if (i.commandName === 'addcard') {
+    const staffEnv = process.env.STAFF_IDS || '';
+    const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
 
-      u.pendingDrop = {
-        cards: pulled,
-        expiresAt: now + 60 * 1000
-      };
-      await saveJsonOrRemote(USERS_FILE, users);
+    if (!staffList.includes(id)) {
+      return i.reply({
+        embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')],
+        ephemeral: true
+      });
+    }
+
+    const cardId = i.options.getString('card_id');
+    const rarity = i.options.getString('rarity');
+    const group = i.options.getString('group');
+    const idol = i.options.getString('idol');
+    const era = i.options.getString('era') || null;
+    const version = i.options.getString('version') || null;
+    const image = i.options.getString('image') || null;
+    const ctype = i.options.getString('type');
+    const droppable = i.options.getBoolean('droppable');
+
+    const cards = await loadJsonOrRemote(CARDS_FILE, []);
+
+    if (cards.find(c => c.id === cardId)) {
+      return i.reply({
+        embeds: [ruiEmbed('Already exists', `There is already a card with ID **${cardId}**.`)],
+        ephemeral: true
+      });
+    }
+
+    const newCard = {
+      id: cardId,
+      group: group,
+      member: idol,
+      era: era,
+      version: version,
+      image: image,
+      rarity: rarity,
+      type: ctype,
+      droppable: droppable
+    };
+
+    cards.push(newCard);
+    await saveJsonOrRemote(CARDS_FILE, cards);
+
+    return i.reply({
+      embeds: [ruiEmbed(
+        'Card created',
+        `New card was added.\nID: **${cardId}**\nGroup: **${group}**\nIdol: **${idol}**\nRarity: **${rarity}**\nType: **${ctype}**\nDroppable: **${droppable ? 'yes' : 'no'}**\nEra: **${era || '—'}**\nVersion: **${version || '—'}**`
+      )]
+    });
+  }
+
+  /* /drop */
+  if (i.commandName === 'drop') {
+    const cards = await loadJsonOrRemote(CARDS_FILE, []);
+    if (!cards.length) {
+      return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
+    }
+
+    const now = Date.now();
+
+    // wenn noch eine Auswahl offen ist
+    if (u.pendingDrop && u.pendingDrop.expiresAt && now < u.pendingDrop.expiresAt) {
+      const opts = u.pendingDrop.cards;
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
@@ -884,23 +848,79 @@ client.on(Events.InteractionCreate, async (i) => {
         new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
       );
 
-      const files = pulled.map((c, idx) => ({
+      const files = opts.map((c, idx) => ({
         attachment: c.image,
         name: `drop_${idx + 1}.png`
       }));
 
       return i.reply({
-        content: `${boostType ? `Drop (boost: ${boostType})` : 'Drop'} – choose **one**:\n1️⃣ ${pulled[0].group} — ${pulled[0].member}\n2️⃣ ${pulled[1].group} — ${pulled[1].member}\n3️⃣ ${pulled[2].group} — ${pulled[2].member}`,
+        content: `Choose **one** of the 3 cards below:\n1️⃣ ${opts[0].group} — ${opts[0].member}\n2️⃣ ${opts[1].group} — ${opts[1].member}\n3️⃣ ${opts[2].group} — ${opts[2].member}`,
         files,
         components: [row],
         ephemeral: true
       });
     }
 
-  } catch (err) {
-    console.error(err);
-    return i.reply({ embeds: [ruiEmbed('Error', 'Something went wrong in Rui. Check Render for details.')] });
+    // cooldown
+    if (u.lastDrop) {
+      const diff = now - new Date(u.lastDrop).getTime();
+      const COOLDOWN = 60 * 1000;
+      if (diff < COOLDOWN) {
+        const left = Math.ceil((COOLDOWN - diff) / 1000);
+        return i.reply({
+          embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)],
+          ephemeral: true
+        });
+      }
+    }
+
+    const boostType = getActiveBoost(u);
+    const pulled = [];
+
+    for (let n = 0; n < 3; n++) {
+      const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, boostType);
+
+      const pool = cards.filter(
+        c => c.rarity === rarity && c.droppable !== false
+      );
+
+      const finalPool = pool.length
+        ? pool
+        : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
+
+      const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
+      pulled.push({ ...chosen });
+    }
+
+    u.pendingDrop = {
+      cards: pulled,
+      expiresAt: now + 60 * 1000
+    };
+    await saveJsonOrRemote(USERS_FILE, users);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
+    );
+
+    const files = pulled.map((c, idx) => ({
+      attachment: c.image,
+      name: `drop_${idx + 1}.png`
+    }));
+
+    return i.reply({
+      content: `${boostType ? `Drop (boost: ${boostType})` : 'Drop'} – choose **one**:\n1️⃣ ${pulled[0].group} — ${pulled[0].member}\n2️⃣ ${pulled[1].group} — ${pulled[1].member}\n3️⃣ ${pulled[2].group} — ${pulled[2].member}`,
+      files,
+      components: [row],
+      ephemeral: true
+    });
   }
+
+} catch (err) {
+  console.error(err);
+  return i.reply({ embeds: [ruiEmbed('Error', 'Something went wrong in Rui. Check Render for details.')] });
+}
 });
 
 /* ----------------------------------------------------
