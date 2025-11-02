@@ -214,6 +214,13 @@ async function registerCommands() {
     new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards'),
     new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards'),
     new SlashCommandBuilder().setName('inventory').setDescription('Show your collected cards'),
+    new SlashCommandBuilder()
+      .setName('claim')
+      .setDescription('Claim a random card (every 90 seconds)'),
+
+    new SlashCommandBuilder()
+      .setName('overview')
+      .setDescription('Show all Rui commands'),
     // NEW: /buy
     new SlashCommandBuilder()
       .setName('buy')
@@ -424,6 +431,7 @@ client.on(Events.InteractionCreate, async (i) => {
         lastWork: null,
         lastDrop: null,
         pendingDrop: null
+        lastClaim: null 
       };
       await saveJsonOrRemote(USERS_FILE, users);
     }
