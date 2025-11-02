@@ -25,91 +25,75 @@ const CARDS_FILE = path.join(__dirname, 'cards.json');
 
 /* ----------------------------------------------------
    Remote + lokal speichern / laden
-   → wir speichern ALLES in EINEM jsonbin: { users, user_cards, cards }
-   → erst lokal lesen (schnell), dann jsonbin (wenn da)
+   (wir speichern ALLES in EINEM jsonbin: { users: ..., user_cards: ..., cards: ... })
 ---------------------------------------------------- */
-
-const JSONBIN_KEY = process.env.JSONBIN_KEY;
-const JSONBIN_ID = process.env.JSONBIN_ID;
-
-// axios mit kurzem Timeout, damit Discord nicht "application did not respond" macht
-const axiosInstance = axios.create({
-  timeout: 1500 // 1,5 Sekunden
-});
-
 async function loadJsonOrRemote(file, fallback) {
-  // 1) immer zuerst lokal probieren
-  let localData = fallback;
-  if (fs.existsSync(file)) {
-    try {
-      localData = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-      localData = fallback;
-    }
+  const BIN_KEY = process.env.JSONBIN_KEY;
+  const BIN_ID = process.env.JSONBIN_ID;
+
+  // wenn kein jsonbin gesetzt ist → lokal
+  if (!BIN_KEY || !BIN_ID) {
+    if (!fs.existsSync(file)) return fallback;
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+    catch { return fallback; }
   }
 
-  // 2) wenn kein JSONBin gesetzt → lokal zurück
-  if (!JSONBIN_KEY || !JSONBIN_ID) {
-    return localData;
-  }
-
-  // 3) JSONBin probieren – aber wenn langsam/down → egal, wir nehmen lokal
+  // versuchen von jsonbin zu laden
   try {
-    const res = await axiosInstance.get(
-      `https://api.jsonbin.io/v3/b/${JSONBIN_ID}/latest`,
-      { headers: { 'X-Master-Key': JSONBIN_KEY } }
-    );
-    const record = res.data.record || {};
+    const res = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+      headers: { 'X-Master-Key': BIN_KEY }
+    });
+    const record = res.data.record;
+    if (!record) return fallback;
 
-    if (file === USERS_FILE) return record.users ?? localData;
-    if (file === USER_CARDS_FILE) return record.user_cards ?? localData;
-    if (file === CARDS_FILE) return record.cards ?? localData;
-
+    if (file === USERS_FILE) return record.users ?? fallback;
+    if (file === USER_CARDS_FILE) return record.user_cards ?? fallback;
+    if (file === CARDS_FILE) return record.cards ?? fallback;
     return record;
   } catch (err) {
-    console.warn('JSONBin load failed or slow, using local:', err.message);
-    return localData;
+    console.error('JSONBin load failed, using local:', err.message);
+    if (!fs.existsSync(file)) return fallback;
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+    catch { return fallback; }
   }
 }
 
 async function saveJsonOrRemote(file, data) {
-  // 1) immer lokal speichern
+  const BIN_KEY = process.env.JSONBIN_KEY;
+  const BIN_ID = process.env.JSONBIN_ID;
+
+  // immer lokal speichern
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
-  // 2) wenn kein JSONBin → fertig
-  if (!JSONBIN_KEY || !JSONBIN_ID) return;
+  // wenn kein jsonbin → fertig
+  if (!BIN_KEY || !BIN_ID) return;
 
   try {
-    // aktuellen stand holen (kurz!)
+    // aktuellen stand holen
     let current = {};
     try {
-      const res = await axiosInstance.get(
-        `https://api.jsonbin.io/v3/b/${JSONBIN_ID}/latest`,
-        { headers: { 'X-Master-Key': JSONBIN_KEY } }
-      );
+      const res = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+        headers: { 'X-Master-Key': BIN_KEY }
+      });
       current = res.data.record || {};
     } catch {
       current = {};
     }
 
-    // passendes Feld ersetzen
+    // je nachdem welche datei wir speichern, setzen wir das feld im gesamt-json
     if (file === USERS_FILE) current.users = data;
     else if (file === USER_CARDS_FILE) current.user_cards = data;
     else if (file === CARDS_FILE) current.cards = data;
 
     // wieder hochladen
-    await axiosInstance.put(
-      `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`,
-      current,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': JSONBIN_KEY
-        }
+    await axios.put(`https://api.jsonbin.io/v3/b/${BIN_ID}`, current, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': BIN_KEY
       }
-    );
+    });
   } catch (err) {
-    console.warn('JSONBin save failed:', err.message);
+    console.error('JSONBin save failed:', err.message);
   }
 }
 
@@ -157,7 +141,22 @@ const BOOST_MULTIPLIERS = {
   }
 };
 
-// 💰 Preise pro Rarity (event & limited NICHT kaufbar)
+// 💜 dein Wunsch: alle Boosts = 45 Minuten, kosten aber unterschiedlich viele 🦋
+const BOOST_BUTTERFLY_PRICES = {
+  small: 25,
+  normal: 40,
+  mega: 65
+};
+const BOOST_DURATION_MS = 45 * 60 * 1000; // 45 Minuten
+
+// 📦 Packs: Coins → 5 / 10 / 20 random Karten
+const PACK_COIN_PRICES = {
+  small: 350,   // 5 Karten
+  medium: 650,  // 10 Karten
+  big: 1100     // 20 Karten
+};
+
+// 💰 Preise pro Rarity (für /buy Karte per ID)
 const RARITY_PRICES = {
   common: 200,
   rare: 400,
@@ -166,9 +165,6 @@ const RARITY_PRICES = {
   legendary: 1200
 };
 
-/* ----------------------------------------------------
-   Helpers
----------------------------------------------------- */
 function getActiveBoost(user) {
   if (!user || !user.activeBoost) return null;
   if (!user.activeBoost.expiresAt) return null;
@@ -202,6 +198,9 @@ function pickRarityWithBoost(baseWeights, boostName = null) {
   return 'common';
 }
 
+/* ----------------------------------------------------
+   Helpers
+---------------------------------------------------- */
 function ruiEmbed(title, desc, fields = []) {
   const e = new EmbedBuilder()
     .setTitle(title)
@@ -229,11 +228,10 @@ async function registerCommands() {
     new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards'),
     new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards'),
     new SlashCommandBuilder().setName('inventory').setDescription('Show your collected cards'),
-
     new SlashCommandBuilder().setName('claim').setDescription('Claim a random card (every 90 seconds)'),
     new SlashCommandBuilder().setName('overview').setDescription('Show all Rui commands'),
 
-    // /buy
+    // /buy – Karte per ID, aber event/limited nicht
     new SlashCommandBuilder()
       .setName('buy')
       .setDescription('Buy a specific card by its card code')
@@ -241,6 +239,36 @@ async function registerCommands() {
         o.setName('card_id')
           .setDescription('The card code (like xlov-rui-001)')
           .setRequired(true)
+      ),
+
+    // /buyboost – 45 min, kostet Butterflies, Auswahl
+    new SlashCommandBuilder()
+      .setName('buyboost')
+      .setDescription('Buy a 45-minute drop boost (costs butterflies)')
+      .addStringOption(o =>
+        o.setName('type')
+          .setDescription('Boost type')
+          .setRequired(true)
+          .addChoices(
+            { name: 'small (25 🦋)', value: 'small' },
+            { name: 'normal (40 🦋)', value: 'normal' },
+            { name: 'mega (65 🦋)', value: 'mega' }
+          )
+      ),
+
+    // /buypack – 5 / 10 / 20 Karten
+    new SlashCommandBuilder()
+      .setName('buypack')
+      .setDescription('Buy a card pack (5 / 10 / 20 random cards)')
+      .addStringOption(o =>
+        o.setName('size')
+          .setDescription('How many cards?')
+          .setRequired(true)
+          .addChoices(
+            { name: '5 cards (350 🪙)', value: 'small' },
+            { name: '10 cards (650 🪙)', value: 'medium' },
+            { name: '20 cards (1100 🪙)', value: 'big' }
+          )
       ),
 
     // /gift
@@ -273,7 +301,7 @@ async function registerCommands() {
           .setRequired(false)
       ),
 
-    // /addcard
+    // STAFF: addcard
     new SlashCommandBuilder()
       .setName('addcard')
       .setDescription('STAFF ONLY – create a new card')
@@ -339,7 +367,11 @@ async function registerCommands() {
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+
+  await rest.put(
+    Routes.applicationCommands(process.env.CLIENT_ID),
+    { body: commands }
+  );
   console.log('Slash commands registered (global)');
 }
 
@@ -378,20 +410,20 @@ client.on(Events.InteractionCreate, async (i) => {
       const u = users[id];
 
       if (!u || !u.pendingDrop) {
-        return i.reply({ content: 'You have no active drop.' });
+        return i.reply({ content: 'You have no active drop.', ephemeral: true });
       }
 
       const now = Date.now();
       if (u.pendingDrop.expiresAt && now > u.pendingDrop.expiresAt) {
         delete u.pendingDrop;
         await saveJsonOrRemote(USERS_FILE, users);
-        return i.reply({ content: 'Your drop expired. Use /drop again.' });
+        return i.reply({ content: 'Your drop expired. Use /drop again.', ephemeral: true });
       }
 
       const idx = parseInt(i.customId.split('_').pop(), 10);
       const cards = u.pendingDrop.cards || [];
       if (!cards[idx]) {
-        return i.reply({ content: 'This card is not available anymore.' });
+        return i.reply({ content: 'This card is not available anymore.', ephemeral: true });
       }
 
       const chosen = cards[idx];
@@ -411,7 +443,8 @@ client.on(Events.InteractionCreate, async (i) => {
         embeds: [ruiEmbed(
           'Card claimed',
           `You claimed **${chosen.id}** (${chosen.group} — ${chosen.member}) • **${chosen.rarity}**`
-        )]
+        )],
+        ephemeral: true
       });
     }
     return;
@@ -425,6 +458,7 @@ client.on(Events.InteractionCreate, async (i) => {
     const id = i.user.id;
     const name = i.user.username;
 
+    // User initialisieren
     if (!users[id]) {
       users[id] = {
         id,
@@ -438,32 +472,12 @@ client.on(Events.InteractionCreate, async (i) => {
         lastWork: null,
         lastDrop: null,
         pendingDrop: null,
-        lastClaim: null
+        lastClaim: null,
+        activeBoost: null
       };
       await saveJsonOrRemote(USERS_FILE, users);
     }
     const u = users[id];
-
-    /* /overview */
-    if (i.commandName === 'overview') {
-      return i.reply({
-        embeds: [ruiEmbed(
-          'Rui Command Overview',
-          'Here’s a quick summary of all available commands:',
-          [
-            { name: '/start', value: 'Create your collector profile' },
-            { name: '/balance', value: 'Show your coins, butterflies, and cards' },
-            { name: '/daily /weekly /monthly', value: 'Claim your rewards' },
-            { name: '/work', value: 'Earn coins and butterflies' },
-            { name: '/drop', value: 'Drop 3 random cards and choose one' },
-            { name: '/claim', value: 'Claim a random card every 90 seconds' },
-            { name: '/buy', value: 'Buy a specific card by ID (not event or limited)' },
-            { name: '/gift', value: 'Send coins, butterflies, or cards to other players' },
-            { name: '/inventory', value: 'View your collected cards' }
-          ]
-        )]
-      });
-    }
 
     /* /ping */
     if (i.commandName === 'ping') {
@@ -487,7 +501,8 @@ client.on(Events.InteractionCreate, async (i) => {
         lastWork: null,
         lastDrop: null,
         pendingDrop: null,
-        lastClaim: null
+        lastClaim: null,
+        activeBoost: null
       };
       await saveJsonOrRemote(USERS_FILE, users);
       return i.reply({ embeds: [ruiEmbed('Profile created', `Hi ${name}. Your collector profile has been created.`)] });
@@ -504,7 +519,8 @@ client.on(Events.InteractionCreate, async (i) => {
           [
             { name: '🪙 Coins', value: String(u.coins), inline: true },
             { name: '🦋 Butterflies', value: String(u.butterflies), inline: true },
-            { name: '✨ Cards', value: String(myCards.length), inline: true }
+            { name: '✨ Cards', value: String(myCards.length), inline: true },
+            u.activeBoost ? { name: 'Boost', value: `${u.activeBoost.type} (active)`, inline: true } : { name: 'Boost', value: 'none', inline: true }
           ]
         )]
       });
@@ -627,7 +643,7 @@ client.on(Events.InteractionCreate, async (i) => {
         return i.reply({
           embeds: [ruiEmbed(
             `${name}'s Inventory`,
-            "You don't have any cards yet. Try `/drop` or buy a pack later."
+            "You don't have any cards yet. Try `/drop`, `/claim` or buy a pack."
           )]
         });
       }
@@ -647,15 +663,17 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* /buy */
+    /* /buy – Karte per ID */
     if (i.commandName === 'buy') {
       const cardId = i.options.getString('card_id');
+
       const allCards = await loadJsonOrRemote(CARDS_FILE, []);
       const wanted = allCards.find(c => c.id === cardId);
 
       if (!wanted) {
         return i.reply({
-          embeds: [ruiEmbed('Not found', `There is no card with ID **${cardId}**.`)]
+          embeds: [ruiEmbed('Not found', `There is no card with ID **${cardId}**.`)],
+          ephemeral: true
         });
       }
 
@@ -664,20 +682,23 @@ client.on(Events.InteractionCreate, async (i) => {
       // event / limited sperren
       if (rarity === 'event' || rarity === 'limited') {
         return i.reply({
-          embeds: [ruiEmbed('Not buyable', `Cards with rarity **${rarity}** cannot be bought. Try drops or events.`)]
+          embeds: [ruiEmbed('Not buyable', `Cards with rarity **${rarity}** cannot be bought. Try drops or events.`)],
+          ephemeral: true
         });
       }
 
       const price = RARITY_PRICES[rarity];
       if (!price) {
         return i.reply({
-          embeds: [ruiEmbed('Not buyable', `Cards with rarity **${rarity}** cannot be bought.`)]
+          embeds: [ruiEmbed('Not buyable', `Cards with rarity **${rarity}** cannot be bought.`)],
+          ephemeral: true
         });
       }
 
       if (u.coins < price) {
         return i.reply({
-          embeds: [ruiEmbed('Not enough coins', `This card costs **${price}** 🪙 but you only have **${u.coins}**.`)]
+          embeds: [ruiEmbed('Not enough coins', `This card costs **${price}** 🪙 but you only have **${u.coins}**.`)],
+          ephemeral: true
         });
       }
 
@@ -697,6 +718,106 @@ client.on(Events.InteractionCreate, async (i) => {
         embeds: [ruiEmbed(
           'Card bought',
           `You bought **${wanted.id}** (${wanted.group} — ${wanted.member}) • **${rarity}** for **${price}** 🪙`
+        )]
+      });
+    }
+
+    /* /buyboost – 45 min, kostet Butterflies */
+    if (i.commandName === 'buyboost') {
+      const boostType = i.options.getString('type');
+      const price = BOOST_BUTTERFLY_PRICES[boostType];
+
+      if (!price) {
+        return i.reply({ embeds: [ruiEmbed('Unknown boost', 'This boost does not exist.')], ephemeral: true });
+      }
+
+      if (u.butterflies < price) {
+        return i.reply({
+          embeds: [ruiEmbed('Not enough butterflies', `This boost costs **${price}** 🦋 but you only have **${u.butterflies}**.`)],
+          ephemeral: true
+        });
+      }
+
+      // abziehen
+      u.butterflies -= price;
+
+      // 45 Minuten lang aktiv
+      u.activeBoost = {
+        type: boostType,
+        expiresAt: Date.now() + BOOST_DURATION_MS
+      };
+
+      await saveJsonOrRemote(USERS_FILE, users);
+
+      return i.reply({
+        embeds: [ruiEmbed(
+          'Boost activated',
+          `You activated a **${boostType}** boost for **45 minutes**.\nIt will affect your **/drop** pulls.\nCost: **${price}** 🦋`
+        )],
+        ephemeral: true
+      });
+    }
+
+    /* /buypack – 5 / 10 / 20 cards → direkt ins Inventar */
+    if (i.commandName === 'buypack') {
+      const size = i.options.getString('size'); // small / medium / big
+      const price = PACK_COIN_PRICES[size];
+
+      if (!price) {
+        return i.reply({ embeds: [ruiEmbed('Unknown pack', 'This pack does not exist.')], ephemeral: true });
+      }
+
+      if (u.coins < price) {
+        return i.reply({
+          embeds: [ruiEmbed('Not enough coins', `This pack costs **${price}** 🪙 but you only have **${u.coins}**.`)],
+          ephemeral: true
+        });
+      }
+
+      const COUNT_MAP = {
+        small: 5,
+        medium: 10,
+        big: 20
+      };
+      const amount = COUNT_MAP[size] || 5;
+
+      const allCards = await loadJsonOrRemote(CARDS_FILE, []);
+      if (!allCards.length) {
+        return i.reply({ embeds: [ruiEmbed('No cards', 'There are no cards to buy right now.')], ephemeral: true });
+      }
+
+      // nur droppable und nicht event / limited
+      const pool = allCards.filter(c =>
+        c.droppable !== false &&
+        c.rarity !== 'event' &&
+        c.rarity !== 'limited'
+      );
+
+      if (!pool.length) {
+        return i.reply({ embeds: [ruiEmbed('No cards', 'There are no normal cards to buy right now.')], ephemeral: true });
+      }
+
+      // Coins abziehen
+      u.coins -= price;
+
+      // Karten ins Inventar
+      const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
+      if (!Array.isArray(allUserCards[id])) allUserCards[id] = [];
+
+      const won = [];
+      for (let n = 0; n < amount; n++) {
+        const chosen = pool[Math.floor(Math.random() * pool.length)];
+        allUserCards[id].push(chosen);
+        won.push(chosen);
+      }
+
+      await saveJsonOrRemote(USER_CARDS_FILE, allUserCards);
+      await saveJsonOrRemote(USERS_FILE, users);
+
+      return i.reply({
+        embeds: [ruiEmbed(
+          'Pack opened',
+          `You bought a **${size}** pack for **${price}** 🪙 and received **${amount}** card(s).`
         )]
       });
     }
@@ -730,7 +851,8 @@ client.on(Events.InteractionCreate, async (i) => {
           lastWork: null,
           lastDrop: null,
           pendingDrop: null,
-          lastClaim: null
+          lastClaim: null,
+          activeBoost: null
         };
       }
 
@@ -744,13 +866,13 @@ client.on(Events.InteractionCreate, async (i) => {
 
         if (what === 'coins') {
           if (u.coins < amount) {
-            return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.coins} coins.`)] });
+            return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.coins} coins.`)], ephemeral: true });
           }
           u.coins -= amount;
           receiver.coins += amount;
         } else {
           if (u.butterflies < amount) {
-            return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.butterflies} butterflies.`)] });
+            return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.butterflies} butterflies.`)], ephemeral: true });
           }
           u.butterflies -= amount;
           receiver.butterflies += amount;
@@ -774,14 +896,16 @@ client.on(Events.InteractionCreate, async (i) => {
 
         if (!cardId) {
           return i.reply({
-            embeds: [ruiEmbed('Missing card', 'Tell me which card ID you want to send.')]
+            embeds: [ruiEmbed('Missing card', 'Tell me which card ID you want to send.')],
+            ephemeral: true
           });
         }
 
         const idx = senderCards.findIndex(c => c.id === cardId);
         if (idx === -1) {
           return i.reply({
-            embeds: [ruiEmbed('Not found', `You don’t own a card with ID **${cardId}**.`)]
+            embeds: [ruiEmbed('Not found', `You don’t own a card with ID **${cardId}**.`)],
+            ephemeral: true
           });
         }
 
@@ -810,7 +934,8 @@ client.on(Events.InteractionCreate, async (i) => {
 
       if (!staffList.includes(id)) {
         return i.reply({
-          embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')]
+          embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')],
+          ephemeral: true
         });
       }
 
@@ -828,7 +953,8 @@ client.on(Events.InteractionCreate, async (i) => {
 
       if (cards.find(c => c.id === cardId)) {
         return i.reply({
-          embeds: [ruiEmbed('Already exists', `There is already a card with ID **${cardId}**.`)]
+          embeds: [ruiEmbed('Already exists', `There is already a card with ID **${cardId}**.`)],
+          ephemeral: true
         });
       }
 
@@ -868,11 +994,17 @@ client.on(Events.InteractionCreate, async (i) => {
       if (u.lastClaim && now - new Date(u.lastClaim).getTime() < COOLDOWN) {
         const left = Math.ceil((COOLDOWN - (now - new Date(u.lastClaim).getTime())) / 1000);
         return i.reply({
-          embeds: [ruiEmbed('Cooldown', `Please wait **${left} seconds** before claiming again.`)]
+          embeds: [ruiEmbed('Cooldown', `Please wait **${left} seconds** before claiming again.`)],
+          ephemeral: true
         });
       }
 
-      const pool = cards.filter(c => c.droppable !== false && c.type !== 'event' && c.type !== 'limited');
+      // Pool: droppable, kein event/limited
+      const pool = cards.filter(c => c.droppable !== false && c.rarity !== 'event' && c.rarity !== 'limited');
+      if (!pool.length) {
+        return i.reply({ embeds: [ruiEmbed('No cards available', 'There are no claimable cards right now.')] });
+      }
+
       const chosen = pool[Math.floor(Math.random() * pool.length)];
 
       const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
@@ -886,7 +1018,7 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({
         embeds: [ruiEmbed(
           'Card claimed',
-          `You got **${chosen.id}** (${chosen.group} — ${chosen.member}) • **${(chosen.rarity || '').toUpperCase()}**! 🎉`
+          `You got **${chosen.id}** (${chosen.group} — ${chosen.member}) • **${chosen.rarity.toUpperCase()}**! 🎉`
         )]
       });
     }
@@ -918,7 +1050,8 @@ client.on(Events.InteractionCreate, async (i) => {
         return i.reply({
           content: `Choose **one** of the 3 cards below:\n1️⃣ ${opts[0].group} — ${opts[0].member}\n2️⃣ ${opts[1].group} — ${opts[1].member}\n3️⃣ ${opts[2].group} — ${opts[2].member}`,
           files,
-          components: [row]
+          components: [row],
+          ephemeral: true
         });
       }
 
@@ -929,7 +1062,8 @@ client.on(Events.InteractionCreate, async (i) => {
         if (diff < COOLDOWN) {
           const left = Math.ceil((COOLDOWN - diff) / 1000);
           return i.reply({
-            embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)]
+            embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)],
+            ephemeral: true
           });
         }
       }
@@ -972,7 +1106,32 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({
         content: `${boostType ? `Drop (boost: ${boostType})` : 'Drop'} – choose **one**:\n1️⃣ ${pulled[0].group} — ${pulled[0].member}\n2️⃣ ${pulled[1].group} — ${pulled[1].member}\n3️⃣ ${pulled[2].group} — ${pulled[2].member}`,
         files,
-        components: [row]
+        components: [row],
+        ephemeral: true
+      });
+    }
+
+    /* /overview */
+    if (i.commandName === 'overview') {
+      return i.reply({
+        embeds: [ruiEmbed(
+          'Rui Command Overview',
+          'Here’s a quick summary of all available commands:',
+          [
+            { name: '/start', value: 'Create your collector profile' },
+            { name: '/balance', value: 'Show your coins, butterflies, and cards' },
+            { name: '/daily /weekly /monthly', value: 'Claim your rewards' },
+            { name: '/work', value: 'Earn coins and butterflies (15min cooldown)' },
+            { name: '/drop', value: 'Drop 3 random cards and choose 1 (1min cooldown, affected by boost)' },
+            { name: '/claim', value: 'Claim 1 random card every 90 seconds' },
+            { name: '/buy', value: 'Buy a specific card by ID (not event or limited)' },
+            { name: '/buyboost', value: 'Buy a 45min drop boost for butterflies' },
+            { name: '/buypack', value: 'Buy 5 / 10 / 20 random cards for coins' },
+            { name: '/gift', value: 'Send coins, butterflies, or cards to other players' },
+            { name: '/inventory', value: 'View your collected cards' }
+          ]
+        )],
+        ephemeral: true
       });
     }
 
