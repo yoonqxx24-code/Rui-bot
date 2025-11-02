@@ -1,4 +1,4 @@
-,require('dotenv').config();
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Events, EmbedBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js');
@@ -136,7 +136,6 @@ async function registerCommands() {
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-  // global, nicht nur eine Guild
   await rest.put(
     Routes.applicationCommands(process.env.CLIENT_ID),
     { body: commands }
@@ -149,14 +148,14 @@ async function registerCommands() {
 ---------------------------------------------------- */
 
 const WORK_MESSAGES = [
-  "You’ve been working so hard again... Hyun said you deserve a break",
+  "You’ve been working so hard again... Hyun said you deserve a break.",
   "You showed up again. I’m proud of you — even if Haru keeps stealing your snacks during breaks.",
   "Work done! Don’t tell Noa I said this, but you might actually be more productive than him today.",
   "I helped count your coins. Muti said it looks like you’re saving for something big.",
   "That look of determination suits you.",
   "You’ve been putting in so much effort lately… the others noticed too. We’re all cheering for you.",
-  "You did well again today. Small steps, right? Isn't that what they alwayssay?",
-  "Here I saved a few butterflies for you",
+  "You did well again today. Small steps, right? Isn’t that what they always say?",
+  "Here, I saved a few butterflies for you.",
   "Another day, another job done. Don’t forget to rest, okay? Even the strongest need a pause.",
   "You earned these coins and butterflies fair and square. Keep them safe."
 ];
@@ -174,7 +173,6 @@ client.on(Events.InteractionCreate, async (i) => {
   if (!i.isChatInputCommand()) return;
 
   try {
-    // user laden / anlegen
     const users = loadJson(USERS_FILE, {});
     const id = i.user.id;
     const name = i.user.username;
@@ -236,7 +234,7 @@ client.on(Events.InteractionCreate, async (i) => {
         )]
       });
     }
-     
+
     /* ---------------- /daily ---------------- */
     if (i.commandName === 'daily') {
       const DAY = 24 * 60 * 60 * 1000;
@@ -348,14 +346,44 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* ---------------- /drop (neu) ---------------- */
+    /* ---------------- /inventory ---------------- */
+    if (i.commandName === 'inventory') {
+      const allUserCards = loadJson(USER_CARDS_FILE, {});
+      const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
+
+      if (!myCards.length) {
+        return i.reply({
+          embeds: [ruiEmbed(
+            `${name}'s Inventory`,
+            "You don't have any cards yet. Try `/drop` or buy a pack later."
+          )]
+        });
+      }
+
+      // wir zeigen erstmal nur die ersten 10
+      const firstTen = myCards.slice(0, 10);
+
+      return i.reply({
+        embeds: [ruiEmbed(
+          `${name}'s Inventory`,
+          `You currently own **${myCards.length}** card(s). Showing first ${firstTen.length}:`,
+          firstTen.map((c, idx) => ({
+            name: `#${idx + 1} • ${c.group} — ${c.member}`,
+            value: `ID: ${c.id} • Rarity: **${c.rarity || 'unknown'}**`,
+            inline: false
+          }))
+        )]
+      });
+    }
+
+    /* ---------------- /drop (mit Boost) ---------------- */
     if (i.commandName === 'drop') {
       const cards = loadJson(CARDS_FILE, []);
       if (!cards.length) {
         return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
       }
 
-      const boostType = getActiveBoost(u); // null oder 'small'/'normal'/'mega'
+      const boostType = getActiveBoost(u);
 
       const pulled = [];
       for (let n = 0; n < 3; n++) {
