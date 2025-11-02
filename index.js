@@ -145,7 +145,7 @@ const BOOST_MULTIPLIERS = {
 const BOOST_BUTTERFLY_PRICES = {
   small: 25,
   normal: 40,
-  mega: 65
+  mega: 60
 };
 const BOOST_DURATION_MS = 45 * 60 * 1000; // 45 Minuten
 
@@ -252,7 +252,7 @@ async function registerCommands() {
           .addChoices(
             { name: 'small (25 🦋)', value: 'small' },
             { name: 'normal (40 🦋)', value: 'normal' },
-            { name: 'mega (65 🦋)', value: 'mega' }
+            { name: 'mega (60 🦋)', value: 'mega' }
           )
       ),
 
