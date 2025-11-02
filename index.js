@@ -367,4 +367,9 @@ client.on(Events.InteractionCreate, async (i) => {
   }
 });
 
+// Keep alive for Render Web Service
+const express = require("express");
+const app = express();
+app.get("/", (req, res) => res.send("Rui is alive"));
+app.listen(process.env.PORT || 3000);
 client.login(process.env.DISCORD_TOKEN);
