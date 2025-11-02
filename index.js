@@ -1,4 +1,4 @@
-require('dotenv').config();
+,require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Events, EmbedBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js');
@@ -130,7 +130,8 @@ async function registerCommands() {
     new SlashCommandBuilder().setName('weekly').setDescription('Claim your weekly reward'),
     new SlashCommandBuilder().setName('monthly').setDescription('Claim your monthly reward'),
     new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards'),
-    new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards')
+    new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards'),
+    new SlashCommandBuilder().setName('inventory').setDescription('Show your collected cards')
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -235,7 +236,7 @@ client.on(Events.InteractionCreate, async (i) => {
         )]
       });
     }
-
+     
     /* ---------------- /daily ---------------- */
     if (i.commandName === 'daily') {
       const DAY = 24 * 60 * 60 * 1000;
