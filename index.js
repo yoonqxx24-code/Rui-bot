@@ -66,7 +66,39 @@ async function registerCommands() {
     new SlashCommandBuilder().setName('weekly').setDescription('Claim your weekly reward'),
     new SlashCommandBuilder().setName('monthly').setDescription('Claim your monthly reward'),
     new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards'),
-    new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards')
+    new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards'),
+
+    // 👇 NEW: /buy
+    new SlashCommandBuilder()
+      .setName('buy')
+      .setDescription('Buy boosts or cards')
+      .addSubcommand(sc =>
+        sc
+          .setName('boost')
+          .setDescription('Buy a drop-rate boost')
+          .addStringOption(o =>
+            o
+              .setName('type')
+              .setDescription('Which boost?')
+              .setRequired(true)
+              .addChoices(
+                { name: 'Small boost (20 🦋)', value: 'small' },
+                { name: 'Normal boost (30 🦋)', value: 'normal' },
+                { name: 'Mega boost (50 🦋)', value: 'mega' }
+              )
+          )
+      )
+      .addSubcommand(sc =>
+        sc
+          .setName('card')
+          .setDescription('Buy a card of your choice!!')
+          .addStringOption(o =>
+            o
+              .setName('id')
+              .setDescription('Card ID to buy (no limited / event)')
+              .setRequired(true)
+          )
+      )
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
