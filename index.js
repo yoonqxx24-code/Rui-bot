@@ -22,7 +22,64 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const USERS_FILE = path.join(__dirname, 'users.json');
 const USER_CARDS_FILE = path.join(__dirname, 'user_cards.json');
 const CARDS_FILE = path.join(__dirname, 'cards.json');
+/* ----------------------------------------------------
+   Remote + lokal speichern / laden
+---------------------------------------------------- */
 
+async function loadJsonOrRemote(file, fallback) {
+  const BIN_KEY = process.env.JSONBIN_KEY;
+  const BIN_ID = process.env.JSONBIN_ID;
+
+  // Wenn keine JSONBin-Daten angegeben sind → lokal lesen
+  if (!BIN_KEY || !BIN_ID) {
+    if (!fs.existsSync(file)) return fallback;
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      return fallback;
+    }
+  }
+
+  // Sonst: JSONBin versuchen
+  try {
+    const res = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+      headers: {
+        'X-Master-Key': BIN_KEY
+      }
+    });
+    return res.data.record || fallback;
+  } catch (err) {
+    console.error('JSONBin load failed, fallback to local:', err.message);
+    if (!fs.existsSync(file)) return fallback;
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      return fallback;
+    }
+  }
+}
+
+async function saveJsonOrRemote(file, data) {
+  const BIN_KEY = process.env.JSONBIN_KEY;
+  const BIN_ID = process.env.JSONBIN_ID;
+
+  // Immer lokal speichern (Backup)
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+
+  if (!BIN_KEY || !BIN_ID) return;
+
+  // Zusätzlich online speichern
+  try {
+    await axios.put(`https://api.jsonbin.io/v3/b/${BIN_ID}`, data, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': BIN_KEY
+      }
+    });
+  } catch (err) {
+    console.error('JSONBin save failed:', err.message);
+  }
+}
 /* ----------------------------------------------------
    Remote + lokal speichern / laden
 ---------------------------------------------------- */
