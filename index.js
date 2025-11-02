@@ -836,7 +836,43 @@ client.on(Events.InteractionCreate, async (i) => {
       )]
     });
   }
+/* /claim */
+    if (i.commandName === 'claim') {
+      const now = Date.now();
+      const COOLDOWN = 90 * 1000; // 1,5 Minuten
+      const cards = await loadJsonOrRemote(CARDS_FILE, []);
 
+      if (!cards.length) {
+        return i.reply({ embeds: [ruiEmbed('No cards available', 'There are no cards to claim yet.')] });
+      }
+
+      if (u.lastClaim && now - new Date(u.lastClaim).getTime() < COOLDOWN) {
+        const left = Math.ceil((COOLDOWN - (now - new Date(u.lastClaim).getTime())) / 1000);
+        return i.reply({
+          embeds: [ruiEmbed('Cooldown', `Please wait **${left} seconds** before claiming again.`)],
+          ephemeral: true
+        });
+      }
+
+      const pool = cards.filter(c => c.droppable !== false && c.type !== 'event' && c.type !== 'limited');
+      const chosen = pool[Math.floor(Math.random() * pool.length)];
+
+      const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
+      if (!Array.isArray(allUserCards[id])) allUserCards[id] = [];
+      allUserCards[id].push(chosen);
+      await saveJsonOrRemote(USER_CARDS_FILE, allUserCards);
+
+      u.lastClaim = new Date().toISOString();
+      await saveJsonOrRemote(USERS_FILE, users);
+
+      return i.reply({
+        embeds: [ruiEmbed(
+          'Card claimed',
+          `You got **${chosen.id}** (${chosen.group} — ${chosen.member}) • **${chosen.rarity.toUpperCase()}**! 🎉`
+        )],
+        files: [chosen.image]
+      });
+    }
   /* /drop */
   if (i.commandName === 'drop') {
     const cards = await loadJsonOrRemote(CARDS_FILE, []);
@@ -929,6 +965,27 @@ client.on(Events.InteractionCreate, async (i) => {
   console.error(err);
   return i.reply({ embeds: [ruiEmbed('Error', 'Something went wrong in Rui. Check Render for details.')] });
 }
+/* /overview */
+    if (i.commandName === 'overview') {
+      return i.reply({
+        embeds: [ruiEmbed(
+          'Rui Command Overview',
+          'Here’s a quick summary of all available commands:',
+          [
+            { name: '/start', value: 'Create your collector profile' },
+            { name: '/balance', value: 'Show your coins, butterflies, and cards' },
+            { name: '/daily /weekly /monthly', value: 'Claim your rewards' },
+            { name: '/work', value: 'Earn coins and butterflies' },
+            { name: '/drop', value: 'Drop 3 random cards and choose one' },
+            { name: '/claim', value: 'Claim a random card every 90 seconds' },
+            { name: '/buy', value: 'Buy a specific card by ID (not event or limited)' },
+            { name: '/gift', value: 'Send coins, butterflies, or cards to other players' },
+            { name: '/inventory', value: 'View your collected cards' }
+          ]
+        )],
+        ephemeral: true
+      });
+    }
 });
 
 /* ----------------------------------------------------
