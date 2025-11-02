@@ -430,7 +430,7 @@ client.on(Events.InteractionCreate, async (i) => {
         lastMonthly: null,
         lastWork: null,
         lastDrop: null,
-        pendingDrop: null
+        pendingDrop: null,
         lastClaim: null 
       };
       await saveJsonOrRemote(USERS_FILE, users);
