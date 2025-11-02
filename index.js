@@ -128,67 +128,78 @@ async function registerCommands() {
     new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards'),
     new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards'),
     new SlashCommandBuilder().setName('inventory').setDescription('Show your collected cards'),
-    // 👇 STAFF: addcard
     new SlashCommandBuilder()
-      .setName('addcard')
-      .setDescription('STAFF ONLY – create a new card')
-      .addStringOption(o =>
-        o.setName('card_id')
-          .setDescription('Unique card ID (e.g. xlov-rui-001)')
-          .setRequired(true)
-      )
-      .addStringOption(o =>
-        o.setName('rarity')
-          .setDescription('Card rarity')
-          .setRequired(true)
-          .addChoices(
-            { name: 'common', value: 'common' },
-            { name: 'rare', value: 'rare' },
-            { name: 'super_rare', value: 'super_rare' },
-            { name: 'ultra_rare', value: 'ultra_rare' },
-            { name: 'legendary', value: 'legendary' }
-          )
-      )
-      .addStringOption(o =>
-        o.setName('group')
-          .setDescription('Group name (XLOV, etc.)')
-          .setRequired(true)
-      )
-      .addStringOption(o =>
-        o.setName('idol')
-          .setDescription('Idol / member name')
-          .setRequired(true)
-      )
-      .addStringOption(o =>
-        o.setName('era')
-          .setDescription('Era / concept (e.g. Bloom, Winter)')
-          .setRequired(false)
-      )
-      .addStringOption(o =>
-        o.setName('version')
-          .setDescription('Version inside that era (e.g. Ver. A, PC 03)')
-          .setRequired(false)
-      )
-      .addStringOption(o =>
-        o.setName('image')
-          .setDescription('Image URL')
-          .setRequired(false)
-      )
-      .addStringOption(o =>
-        o.setName('ctype')
-          .setDescription('Card type')
-          .setRequired(true)
-          .addChoices(
-            { name: 'Regular', value: 'reg' },
-            { name: 'Event', value: 'event' },
-            { name: 'Limited', value: 'limited' }
-          )
-      )
-      .addBooleanOption(o =>
-        o.setName('droppable')
-          .setDescription('Should this card appear in drops/packs?')
-          .setRequired(true)
-      )
+  .setName('addcard')
+  .setDescription('STAFF ONLY – create a new card')
+
+  // 1. basic identity
+  .addStringOption(o =>
+    o.setName('card_id')
+     .setDescription('Unique card ID (e.g. xlov-rui-001)')
+     .setRequired(true)
+  )
+  .addStringOption(o =>
+    o.setName('group')
+     .setDescription('Group name (XLOV, etc.)')
+     .setRequired(true)
+  )
+  .addStringOption(o =>
+    o.setName('idol')
+     .setDescription('Idol / member name')
+     .setRequired(true)
+  )
+
+  // 2. rarity + type
+  .addStringOption(o =>
+    o.setName('rarity')
+     .setDescription('Card rarity')
+     .setRequired(true)
+     .addChoices(
+       { name: 'common', value: 'common' },
+       { name: 'rare', value: 'rare' },
+       { name: 'super_rare', value: 'super_rare' },
+       { name: 'ultra_rare', value: 'ultra_rare' },
+       { name: 'legendary', value: 'legendary' },
+       { name: 'event', value: 'event' },
+       { name: 'limited', value: 'limited' }
+     )
+  )
+  .addStringOption(o =>
+    o.setName('type')
+     .setDescription('Card type (reg, event, limited)')
+     .setRequired(true)
+     .addChoices(
+       { name: 'Regular', value: 'reg' },
+       { name: 'Event', value: 'event' },
+       { name: 'Limited', value: 'limited' }
+     )
+  )
+
+  // 3. era + version
+  .addStringOption(o =>
+    o.setName('era')
+     .setDescription('Era / concept (e.g. Bloom, Winter)')
+     .setRequired(true)
+  )
+  .addStringOption(o =>
+    o.setName('version')
+     .setDescription('Version inside that era (e.g. Ver. A, PC 03)')
+     .setRequired(true)
+  )
+
+  // 4. image
+  .addStringOption(o =>
+    o.setName('image')
+     .setDescription('Image URL')
+     .setRequired(true)
+  )
+
+  // 5. droppable
+  .addBooleanOption(o =>
+    o.setName('droppable')
+     .setDescription('Should this card drop in /drop?')
+     .setRequired(true)
+  )
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
