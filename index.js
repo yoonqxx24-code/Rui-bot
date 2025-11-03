@@ -187,48 +187,83 @@ async function registerCommands() {
 
     // ✅ addcard korrekt + Bild per URL oder Attachment
     new SlashCommandBuilder()
-      .setName('addcard')
-      .setDescription('STAFF ONLY – create a new card')
-      .addStringOption(o =>
-        o.setName('card_id').setDescription(
-          'ID template (ALL CAPS): {R}{GG}{II}V{V}{EE} → R=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99. Examples: CXLHYV101, ESXLHYV101, ELXLHYV101'
-        ).setRequired(true)
+  .setName('addcard')
+  .setDescription('STAFF ONLY – create a new card')
+  .addStringOption(o =>
+    o.setName('card_id')
+      .setDescription('ID template (ALL CAPS): {R}{GG}{II}V{V}{EE} → R=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99. Examples: CXLHYV101, ESXLHYV101, ELXLHYV101')
+      .setRequired(true)
+  )
+  .addStringOption(o =>
+    o.setName('group')
+      .setDescription('Group name (XLOV, etc.)')
+      .setRequired(true)
+  )
+  .addStringOption(o =>
+    o.setName('idol')
+      .setDescription('Idol / member name')
+      .setRequired(true)
+  )
+  .addStringOption(o =>
+    o.setName('rarity')
+      .setDescription('Card rarity')
+      .setRequired(true)
+      .addChoices(
+        { name: 'common', value: 'common' },
+        { name: 'rare', value: 'rare' },
+        { name: 'super_rare', value: 'super_rare' },
+        { name: 'ultra_rare', value: 'ultra_rare' },
+        { name: 'legendary', value: 'legendary' },
+        { name: 'event', value: 'event' },
+        { name: 'limited', value: 'limited' }
       )
-      .addStringOption(o => o.setName('group').setDescription('Group name (XLOV, etc.)').setRequired(true))
-      .addStringOption(o => o.setName('idol').setDescription('Idol / member name').setRequired(true))
-      .addStringOption(o =>
-        o.setName('rarity').setDescription('Card rarity').setRequired(true).addChoices(
-          { name: 'common', value: 'common' },
-          { name: 'rare', value: 'rare' },
-          { name: 'super_rare', value: 'super_rare' },
-          { name: 'ultra_rare', value: 'ultra_rare' },
-          { name: 'legendary', value: 'legendary' },
-          { name: 'event', value: 'event' },
-          { name: 'limited', value: 'limited' }
-        )
+  )
+  .addStringOption(o =>
+    o.setName('type')
+      .setDescription('Card type (reg, event, limited)')
+      .setRequired(true)
+      .addChoices(
+        { name: 'Regular', value: 'reg' },
+        { name: 'Event', value: 'event' },
+        { name: 'Limited', value: 'limited' }
       )
-      .addStringOption(o =>
-        o.setName('type').setDescription('Card type (reg, event, limited)').setRequired(true).addChoices(
-          { name: 'Regular', value: 'reg' },
-          { name: 'Event', value: 'event' },
-          { name: 'Limited', value: 'limited' }
-        )
-      )
-      .addStringOption(o => o.setName('era').setDescription('Era / concept (e.g. Bloom, Winter)').setRequired(true))
-      .addStringOption(o => o.setName('version').setDescription('Version inside that era (e.g. Ver. A, PC 03)').setRequired(true))
-      .addStringOption(o =>
-        o.setName('image').setDescription('Image URL (optional if you upload a file)').setRequired(false)
-      )
-      .addAttachmentOption(o =>
-        o.setName('image_file').setDescription('Upload the card image (PNG/JPG/GIF/WebP)').setRequired(false)
-      )
-      .addBooleanOption(o =>
-        o.setName('droppable').setDescription('Should this card drop in /drop?').setRequired(true)
-      ),
+  )
+  .addStringOption(o =>
+    o.setName('era')
+      .setDescription('Era / concept (e.g. Bloom, Winter)')
+      .setRequired(true)
+  )
+  .addStringOption(o =>
+    o.setName('version')
+      .setDescription('Version inside that era (e.g. Ver. A, PC 03)')
+      .setRequired(true)
+  )
+  // URL optional …
+  .addStringOption(o =>
+    o.setName('image')
+      .setDescription('Image URL (optional if you upload a file)')
+      .setRequired(false)
+  )
+  // … und Attachment optional
+  .addAttachmentOption(o =>
+    o.setName('image_file')
+      .setDescription('Upload the card image (PNG/JPG/GIF/WebP)')
+      .setRequired(false)
+  )
+  .addBooleanOption(o =>
+    o.setName('droppable')
+      .setDescription('Should this card drop in /drop?')
+      .setRequired(true)
+  )
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+  await rest.put(
+  Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+  { body: commands }
+);
+console.log('Slash commands registered (guild)');
   console.log('Slash commands registered (global)');
 }
 
