@@ -59,6 +59,7 @@ async function saveJsonOrRemote(file, data) {
   const BIN_KEY = process.env.JSONBIN_KEY;
   const BIN_ID = process.env.JSONBIN_ID;
 
+  // immer lokal speichern
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
   if (!BIN_KEY || !BIN_ID) return;
 
@@ -102,7 +103,7 @@ const BOOST_MULTIPLIERS = {
   mega:  { common: 0.5, rare: 1.4, super_rare: 1.6, ultra_rare: 1.8, legendary: 2.0, event: 2.2, limited: 2.3 }
 };
 
-// 💰 Kaufpreise (event/limited nicht kaufbar)
+// Kaufpreise (event/limited nicht kaufbar)
 const RARITY_PRICES = { common: 200, rare: 400, super_rare: 650, ultra_rare: 900, legendary: 1200 };
 
 function getActiveBoost(user) {
@@ -185,88 +186,59 @@ async function registerCommands() {
       .addIntegerOption(o => o.setName('amount').setDescription('Amount (for coins/butterflies)').setRequired(false))
       .addStringOption(o => o.setName('card_id').setDescription('Card ID (ALL CAPS, for card gifts)').setRequired(false)),
 
-    // ✅ addcard korrekt + Bild per URL oder Attachment
+    // /addcard – NUR Datei-Upload für image
     new SlashCommandBuilder()
-  .setName('addcard')
-  .setDescription('STAFF ONLY – create a new card')
-  .addStringOption(o =>
-    o.setName('card_id')
-      .setDescription('ID template (ALL CAPS): {R}{GG}{II}V{V}{EE} → R=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99. Examples: CXLHYV101, ESXLHYV101, ELXLHYV101')
-      .setRequired(true)
-  )
-  .addStringOption(o =>
-    o.setName('group')
-      .setDescription('Group name (XLOV, etc.)')
-      .setRequired(true)
-  )
-  .addStringOption(o =>
-    o.setName('idol')
-      .setDescription('Idol / member name')
-      .setRequired(true)
-  )
-  .addStringOption(o =>
-    o.setName('rarity')
-      .setDescription('Card rarity')
-      .setRequired(true)
-      .addChoices(
-        { name: 'common', value: 'common' },
-        { name: 'rare', value: 'rare' },
-        { name: 'super_rare', value: 'super_rare' },
-        { name: 'ultra_rare', value: 'ultra_rare' },
-        { name: 'legendary', value: 'legendary' },
-        { name: 'event', value: 'event' },
-        { name: 'limited', value: 'limited' }
+      .setName('addcard')
+      .setDescription('STAFF ONLY – create a new card')
+      .addStringOption(o =>
+        o.setName('card_id')
+          .setDescription('ID template (ALL CAPS): {R}{GG}{II}V{V}{EE} → R=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99')
+          .setRequired(true)
       )
-  )
-  .addStringOption(o =>
-    o.setName('type')
-      .setDescription('Card type (reg, event, limited)')
-      .setRequired(true)
-      .addChoices(
-        { name: 'Regular', value: 'reg' },
-        { name: 'Event', value: 'event' },
-        { name: 'Limited', value: 'limited' }
+      .addStringOption(o => o.setName('group').setDescription('Group name (XLOV, etc.)').setRequired(true))
+      .addStringOption(o => o.setName('idol').setDescription('Idol / member name').setRequired(true))
+      .addStringOption(o =>
+        o.setName('rarity').setDescription('Card rarity').setRequired(true).addChoices(
+          { name: 'common', value: 'common' },
+          { name: 'rare', value: 'rare' },
+          { name: 'super_rare', value: 'super_rare' },
+          { name: 'ultra_rare', value: 'ultra_rare' },
+          { name: 'legendary', value: 'legendary' },
+          { name: 'event', value: 'event' },
+          { name: 'limited', value: 'limited' }
+        )
       )
-  )
-  .addStringOption(o =>
-    o.setName('era')
-      .setDescription('Era / concept (e.g. Bloom, Winter)')
-      .setRequired(true)
-  )
-  .addStringOption(o =>
-    o.setName('version')
-      .setDescription('Version inside that era (e.g. Ver. A, PC 03)')
-      .setRequired(true)
-  )
- // … oberhalb stehen era/version …
-
-.addAttachmentOption(o =>
-  o.setName('image')
-    .setDescription('Upload the card image (PNG/JPG/GIF/WebP)')
-    .setRequired(true)
-)
-
-.addBooleanOption(o =>
-  o.setName('droppable')
-    .setDescription('Should this card drop in /drop?')
-    .setRequired(true)
-)
-  )
-  .addBooleanOption(o =>
-    o.setName('droppable')
-      .setDescription('Should this card drop in /drop?')
-      .setRequired(true)
-  )
+      .addStringOption(o =>
+        o.setName('type').setDescription('Card type (reg, event, limited)').setRequired(true).addChoices(
+          { name: 'Regular', value: 'reg' },
+          { name: 'Event', value: 'event' },
+          { name: 'Limited', value: 'limited' }
+        )
+      )
+      .addStringOption(o => o.setName('era').setDescription('Era / concept (e.g. Bloom, Winter)').setRequired(true))
+      .addStringOption(o => o.setName('version').setDescription('Version inside that era (e.g. Ver. A, PC 03)').setRequired(true))
+      .addAttachmentOption(o =>
+        o.setName('image').setDescription('Upload the card image (PNG/JPG/GIF/WebP)').setRequired(true)
+      )
+      .addBooleanOption(o =>
+        o.setName('droppable').setDescription('Should this card drop in /drop?').setRequired(true)
+      )
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
+  // global (optional zusätzlich guild-scope falls gewünscht)
   await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-  await rest.put(
-  Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-  { body: commands }
-);
-console.log('Slash commands registered (guild)');
-  console.log('Slash commands registered (global)');
+
+  // optional: in 1 Guild schneller sichtbar
+  if (process.env.GUILD_ID) {
+    await rest.put(
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+      { body: commands }
+    );
+  }
+
+  console.log('Slash commands registered');
 }
 
 /* ----------------------------------------------------
@@ -616,53 +588,41 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ embeds: [ruiEmbed('Unknown thing', 'You can gift `coins`, `butterflies` or `card`.')] });
     }
 
-    /* /addcard (STAFF + Template-Check, ALL CAPS + ES/EL) */
+    /* /addcard (STAFF + Template-Check, ALL CAPS + ES/EL, Bild-Datei Pflicht) */
     if (i.commandName === 'addcard') {
       const staffEnv = process.env.STAFF_IDS || '';
       const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
-      if (!staffList.includes(id)) {
+      if (!staffList.includes(i.user.id)) {
         return i.reply({ embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')], ephemeral: true });
       }
 
-      // normalize to ALL CAPS immediately
-const cardIdRaw = i.options.getString('card_id') || '';
-const cardId = cardIdRaw.toUpperCase();
+      const cardIdRaw = i.options.getString('card_id') || '';
+      const cardId = cardIdRaw.toUpperCase();
 
-const rarity  = i.options.getString('rarity');
-const group   = i.options.getString('group');
-const idol    = i.options.getString('idol');
-const era     = i.options.getString('era') || null;
-const version = i.options.getString('version') || null;
-const ctype   = i.options.getString('type');
-const droppable = i.options.getBoolean('droppable');
+      const rarity  = i.options.getString('rarity');
+      const group   = i.options.getString('group');
+      const idol    = i.options.getString('idol');
+      const era     = i.options.getString('era') || null;
+      const version = i.options.getString('version') || null;
+      const ctype   = i.options.getString('type');
+      const droppable = i.options.getBoolean('droppable');
 
-// === NEW: read attachment (required) ===
-const imgAtt = i.options.getAttachment('image');
-if (!imgAtt) {
-  return i.reply({
-    embeds: [ruiEmbed('Missing image', 'Please attach an image file.')],
-    ephemeral: true
-  });
-}
-
-// (optional) sanity checks
-const isImage = (imgAtt.contentType || '').startsWith('image/');
-const maxBytes = 10 * 1024 * 1024; // 10 MB
-if (!isImage || (imgAtt.size && imgAtt.size > maxBytes)) {
-  return i.reply({
-    embeds: [ruiEmbed('Invalid image', 'Only image files up to ~10 MB are allowed.')],
-    ephemeral: true
-  });
-}
-
-// use the CDN URL from the attachment
-const image = imgAtt.url;
+      // Bild-Upload (erforderlich)
+      const imgAtt = i.options.getAttachment('image');
+      if (!imgAtt) {
+        return i.reply({ embeds: [ruiEmbed('Missing image', 'Please attach an image file.')], ephemeral: true });
       }
+      const isImage = (imgAtt.contentType || '').startsWith('image/');
+      const maxBytes = 10 * 1024 * 1024; // 10 MB
+      if (!isImage || (imgAtt.size && imgAtt.size > maxBytes)) {
+        return i.reply({ embeds: [ruiEmbed('Invalid image', 'Only image files up to ~10 MB are allowed.')], ephemeral: true });
+      }
+      const image = imgAtt.url; // Discord CDN URL
 
       if (!ID_REGEX.test(cardId)) {
         return i.reply({
           embeds: [ruiEmbed('Invalid card_id',
-            'Use **{R}{GG}{II}V{V}{EE}** (ALL CAPS)\nR=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99\nExamples: **CXLHYV101**, **ESXLHYV101**, **ELXLHYV101**'
+            'Use **{R}{GG}{II}V{V}{EE}** (ALL CAPS)\nR=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99'
           )],
           ephemeral: true
         });
