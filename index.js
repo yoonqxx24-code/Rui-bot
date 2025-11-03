@@ -199,6 +199,26 @@ function rand(min, max) {
 }
 
 /* ----------------------------------------------------
+   ID Template (ALL CAPS, inkl. ES/EL)
+   Pattern: {R}{GG}{II}V{V}{EE}
+   R = C/R/S/U/L/ES/EL
+   GG = GROUP 2 letters
+   II = IDOL  2 letters
+   V = Version number 1..∞
+   EE = Era 01..99
+---------------------------------------------------- */
+const ID_REGEX = /^(?:C|R|S|U|L|ES|EL)[A-Z]{2}[A-Z]{2}V([1-9]\d*)(0[1-9]|[1-9]\d)$/;
+const rarityLetterMap = {
+  common: 'C',
+  rare: 'R',
+  super_rare: 'S',
+  ultra_rare: 'U',
+  legendary: 'L',
+  event: 'ES',
+  limited: 'EL'
+};
+
+/* ----------------------------------------------------
    Slash Commands registrieren
 ---------------------------------------------------- */
 async function registerCommands() {
@@ -223,7 +243,7 @@ async function registerCommands() {
       .setDescription('Buy a specific card by its card code')
       .addStringOption(o =>
         o.setName('card_id')
-          .setDescription('The card code (like xlov-rui-001)')
+          .setDescription('The card code (ALL CAPS, e.g. CXLHYV101)')
           .setRequired(true)
       ),
     new SlashCommandBuilder()
@@ -251,7 +271,7 @@ async function registerCommands() {
       )
       .addStringOption(o =>
         o.setName('card_id')
-          .setDescription('Card ID (for card gifts)')
+          .setDescription('Card ID (ALL CAPS, for card gifts)')
           .setRequired(false)
       ),
     new SlashCommandBuilder()
@@ -260,7 +280,7 @@ async function registerCommands() {
       .addStringOption(o =>
         o.setName('card_id')
           .setDescription(
-            'ID template: {r}{GG}{II}v{V}{EE} → r=c/r/s/u/l · GG=Group(2) · II=Idol(2) · V=Version(1..∞) · EE=Era(2, 01..99). Example: cXLHYv101'
+            'ID template (ALL CAPS): {R}{GG}{II}V{V}{EE} → R=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99. Examples: CXLHYV101, ESXLHYV101, ELXLHYV101'
           )
           .setRequired(true)
       )
@@ -394,7 +414,6 @@ client.on(Events.InteractionCreate, async (i) => {
       u.lastDrop = new Date().toISOString();
       await saveJsonOrRemote(USERS_FILE, users);
 
-      // Embed mit Bild statt file
       const embed = new EmbedBuilder()
         .setTitle('Card claimed')
         .setDescription(`You claimed **${chosen.id}** (${chosen.group} — ${chosen.member}) • **${chosen.rarity}**`)
@@ -645,7 +664,8 @@ client.on(Events.InteractionCreate, async (i) => {
 
     /* /buy */
     if (i.commandName === 'buy') {
-      const cardId = i.options.getString('card_id');
+      const cardIdInput = i.options.getString('card_id');
+      const cardId = (cardIdInput || '').toUpperCase();
 
       const allCards = await loadJsonOrRemote(CARDS_FILE, []);
       const wanted = allCards.find(c => c.id === cardId);
@@ -703,7 +723,8 @@ client.on(Events.InteractionCreate, async (i) => {
       const targetUser = i.options.getUser('target');
       const what = i.options.getString('what');
       const amount = i.options.getInteger('amount');
-      const cardId = i.options.getString('card_id');
+      const cardIdInput = i.options.getString('card_id');
+      const cardId = cardIdInput ? cardIdInput.toUpperCase() : null;
 
       if (!targetUser) {
         return i.reply({ embeds: [ruiEmbed('No target', 'You have to pick someone to gift to.')] });
@@ -768,7 +789,7 @@ client.on(Events.InteractionCreate, async (i) => {
 
         if (!cardId) {
           return i.reply({
-            embeds: [ruiEmbed('Missing card', 'Tell me which card ID you want to send.')],
+            embeds: [ruiEmbed('Missing card', 'Tell me which card ID you want to send (ALL CAPS).')],
             ephemeral: true
           });
         }
@@ -799,7 +820,7 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ embeds: [ruiEmbed('Unknown thing', 'You can gift `coins`, `butterflies` or `card`.')] });
     }
 
-    /* /addcard (STAFF + Template-Check) */
+    /* /addcard (STAFF + Template-Check, ALL CAPS + ES/EL) */
     if (i.commandName === 'addcard') {
       const staffEnv = process.env.STAFF_IDS || '';
       const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
@@ -811,7 +832,10 @@ client.on(Events.InteractionCreate, async (i) => {
         });
       }
 
-      const cardId = i.options.getString('card_id');
+      // normalize to ALL CAPS immediately
+      const cardIdRaw = i.options.getString('card_id') || '';
+      const cardId = cardIdRaw.toUpperCase();
+
       const rarity = i.options.getString('rarity');
       const group = i.options.getString('group');
       const idol = i.options.getString('idol');
@@ -821,33 +845,27 @@ client.on(Events.InteractionCreate, async (i) => {
       const ctype = i.options.getString('type');
       const droppable = i.options.getBoolean('droppable');
 
-      // Template: {r}{GG}{II}v{V}{EE}
-      // r=c|r|s|u|l  · GG=[A-Za-z]{2} · II=[A-Za-z]{2} · V=[1-9]\d* · EE=(01..99)
-      const ID_REGEX = /^[crsul][A-Za-z]{2}[A-Za-z]{2}v([1-9]\d*)(0[1-9]|[1-9]\d)$/;
       if (!ID_REGEX.test(cardId)) {
         return i.reply({
           embeds: [ruiEmbed(
             'Invalid card_id',
-            'Use **{r}{GG}{II}v{V}{EE}** → r=c/r/s/u/l · GG=Group(2) · II=Idol(2) · V=Version(1..∞) · EE=Era(2, 01..99)\nExample: **cXLHYv101**'
+            'Use **{R}{GG}{II}V{V}{EE}** (ALL CAPS)\nR=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99\nExamples: **CXLHYV101**, **ESXLHYV101**, **ELXLHYV101**'
           )],
           ephemeral: true
         });
       }
 
-      // Rarity-Letter vs. ausgewählte rarity prüfen
-      const rarityLetterMap = {
-        common: 'c',
-        rare: 'r',
-        super_rare: 's',
-        ultra_rare: 'u',
-        legendary: 'l'
-      };
-      const expectedLetter = rarityLetterMap[rarity] || 'c';
-      if (cardId[0] !== expectedLetter && (rarity === 'common' || rarity === 'rare' || rarity === 'super_rare' || rarity === 'ultra_rare' || rarity === 'legendary')) {
+      // Rarity prefix vs selected rarity
+      const expected = rarityLetterMap[rarity] || 'C';
+      const prefix = (cardId.startsWith('ES') || cardId.startsWith('EL'))
+        ? cardId.slice(0, 2)
+        : cardId.slice(0, 1);
+
+      if (prefix !== expected) {
         return i.reply({
           embeds: [ruiEmbed(
             'Rarity mismatch',
-            `ID starts with **${cardId[0]}**, but rarity is **${rarity}** (expected **${expectedLetter}**).`
+            `ID starts with **${prefix}**, but rarity is **${rarity}** (expected **${expected}**).`
           )],
           ephemeral: true
         });
