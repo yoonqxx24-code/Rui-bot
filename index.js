@@ -25,21 +25,17 @@ const CARDS_FILE = path.join(__dirname, 'cards.json');
 
 /* ----------------------------------------------------
    Remote + lokal speichern / laden
-   (wir speichern ALLES in EINEM jsonbin: { users: ..., user_cards: ..., cards: ... })
 ---------------------------------------------------- */
-
 async function loadJsonOrRemote(file, fallback) {
   const BIN_KEY = process.env.JSONBIN_KEY;
   const BIN_ID = process.env.JSONBIN_ID;
 
-  // wenn kein jsonbin gesetzt ist → lokal
   if (!BIN_KEY || !BIN_ID) {
     if (!fs.existsSync(file)) return fallback;
     try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
     catch { return fallback; }
   }
 
-  // versuchen von jsonbin zu laden
   try {
     const res = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
       headers: { 'X-Master-Key': BIN_KEY }
@@ -63,33 +59,24 @@ async function saveJsonOrRemote(file, data) {
   const BIN_KEY = process.env.JSONBIN_KEY;
   const BIN_ID = process.env.JSONBIN_ID;
 
-  // immer lokal speichern
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
-
-  // wenn kein jsonbin → fertig
   if (!BIN_KEY || !BIN_ID) return;
 
   try {
-    // aktuellen stand holen
     let current = {};
     try {
       const res = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
         headers: { 'X-Master-Key': BIN_KEY }
       });
       current = res.data.record || {};
-    } catch {
-      current = {};
-    }
+    } catch { current = {}; }
 
     if (file === USERS_FILE) current.users = data;
     else if (file === USER_CARDS_FILE) current.user_cards = data;
     else if (file === CARDS_FILE) current.cards = data;
 
     await axios.put(`https://api.jsonbin.io/v3/b/${BIN_ID}`, current, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Master-Key': BIN_KEY
-      }
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': BIN_KEY }
     });
   } catch (err) {
     console.error('JSONBin save failed:', err.message);
@@ -99,7 +86,6 @@ async function saveJsonOrRemote(file, data) {
 /* ----------------------------------------------------
    BOOST / DROP – Hilfsdaten
 ---------------------------------------------------- */
-
 const BASE_RARITY_WEIGHTS = {
   common: 44,
   rare: 20,
@@ -111,69 +97,29 @@ const BASE_RARITY_WEIGHTS = {
 };
 
 const BOOST_MULTIPLIERS = {
-  small: {
-    common: 0.9,
-    rare: 1.1,
-    super_rare: 1.2,
-    ultra_rare: 1.25,
-    legendary: 1.3,
-    event: 1.3,
-    limited: 1.3
-  },
-  normal: {
-    common: 0.75,
-    rare: 1.25,
-    super_rare: 1.4,
-    ultra_rare: 1.5,
-    legendary: 1.6,
-    event: 1.6,
-    limited: 1.6
-  },
-  mega: {
-    common: 0.5,
-    rare: 1.4,
-    super_rare: 1.6,
-    ultra_rare: 1.8,
-    legendary: 2.0,
-    event: 2.2,
-    limited: 2.3
-  }
+  small: { common: 0.9, rare: 1.1, super_rare: 1.2, ultra_rare: 1.25, legendary: 1.3, event: 1.3, limited: 1.3 },
+  normal:{ common: 0.75, rare: 1.25, super_rare: 1.4, ultra_rare: 1.5, legendary: 1.6, event: 1.6, limited: 1.6 },
+  mega:  { common: 0.5, rare: 1.4, super_rare: 1.6, ultra_rare: 1.8, legendary: 2.0, event: 2.2, limited: 2.3 }
 };
 
-// 💰 Preise pro Rarity (event & limited ABSICHTLICH nicht drin → nicht kaufbar)
-const RARITY_PRICES = {
-  common: 200,
-  rare: 400,
-  super_rare: 650,
-  ultra_rare: 900,
-  legendary: 1200
-};
+// 💰 Kaufpreise (event/limited nicht kaufbar)
+const RARITY_PRICES = { common: 200, rare: 400, super_rare: 650, ultra_rare: 900, legendary: 1200 };
 
 function getActiveBoost(user) {
   if (!user || !user.activeBoost) return null;
   if (!user.activeBoost.expiresAt) return null;
-  if (Date.now() > user.activeBoost.expiresAt) {
-    delete user.activeBoost;
-    return null;
-  }
+  if (Date.now() > user.activeBoost.expiresAt) { delete user.activeBoost; return null; }
   return user.activeBoost.type;
 }
 
 function pickRarityWithBoost(baseWeights, boostName = null) {
   const weights = { ...baseWeights };
-
   if (boostName && BOOST_MULTIPLIERS[boostName]) {
     const multi = BOOST_MULTIPLIERS[boostName];
-    for (const r in weights) {
-      if (multi[r]) {
-        weights[r] = weights[r] * multi[r];
-      }
-    }
+    for (const r in weights) if (multi[r]) weights[r] = weights[r] * multi[r];
   }
-
   const total = Object.values(weights).reduce((a, b) => a + b, 0);
   const roll = Math.random() * total;
-
   let acc = 0;
   for (const [rarity, weight] of Object.entries(weights)) {
     acc += weight;
@@ -186,36 +132,19 @@ function pickRarityWithBoost(baseWeights, boostName = null) {
    Helpers
 ---------------------------------------------------- */
 function ruiEmbed(title, desc, fields = []) {
-  const e = new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(desc)
-    .setColor(0xFFB6C1);
+  const e = new EmbedBuilder().setTitle(title).setDescription(desc).setColor(0xFFB6C1);
   if (fields.length) e.addFields(...fields);
   return e;
 }
-
-function rand(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
 /* ----------------------------------------------------
    ID Template (ALL CAPS, inkl. ES/EL)
-   Pattern: {R}{GG}{II}V{V}{EE}
-   R = C/R/S/U/L/ES/EL
-   GG = GROUP 2 letters
-   II = IDOL  2 letters
-   V = Version number 1..∞
-   EE = Era 01..99
+   {R}{GG}{II}V{V}{EE}
 ---------------------------------------------------- */
 const ID_REGEX = /^(?:C|R|S|U|L|ES|EL)[A-Z]{2}[A-Z]{2}V([1-9]\d*)(0[1-9]|[1-9]\d)$/;
 const rarityLetterMap = {
-  common: 'C',
-  rare: 'R',
-  super_rare: 'S',
-  ultra_rare: 'U',
-  legendary: 'L',
-  event: 'ES',
-  limited: 'EL'
+  common: 'C', rare: 'R', super_rare: 'S', ultra_rare: 'U', legendary: 'L', event: 'ES', limited: 'EL'
 };
 
 /* ----------------------------------------------------
@@ -232,134 +161,80 @@ async function registerCommands() {
     new SlashCommandBuilder().setName('drop').setDescription('Drop 3 random cards'),
     new SlashCommandBuilder().setName('work').setDescription('Help around the XLOV studio to earn rewards'),
     new SlashCommandBuilder().setName('inventory').setDescription('Show your collected cards'),
-    new SlashCommandBuilder()
-      .setName('claim')
-      .setDescription('Claim a random card (every 90 seconds)'),
-    new SlashCommandBuilder()
-      .setName('overview')
-      .setDescription('Show all Rui commands'),
+    new SlashCommandBuilder().setName('claim').setDescription('Claim a random card (every 90 seconds)'),
+    new SlashCommandBuilder().setName('overview').setDescription('Show all Rui commands'),
+
     new SlashCommandBuilder()
       .setName('buy')
       .setDescription('Buy a specific card by its card code')
       .addStringOption(o =>
-        o.setName('card_id')
-          .setDescription('The card code (ALL CAPS, e.g. CXLHYV101)')
-          .setRequired(true)
+        o.setName('card_id').setDescription('The card code (ALL CAPS, e.g. CXLHYV101)').setRequired(true)
       ),
+
     new SlashCommandBuilder()
       .setName('gift')
       .setDescription('Send coins, butterflies or a card to another player')
-      .addUserOption(o =>
-        o.setName('target')
-          .setDescription('Who should receive it?')
-          .setRequired(true)
-      )
+      .addUserOption(o => o.setName('target').setDescription('Who should receive it?').setRequired(true))
       .addStringOption(o =>
-        o.setName('what')
-          .setDescription('What do you want to gift?')
-          .setRequired(true)
-          .addChoices(
-            { name: 'Coins', value: 'coins' },
-            { name: 'Butterflies', value: 'butterflies' },
-            { name: 'Card', value: 'card' }
-          )
+        o.setName('what').setDescription('What do you want to gift?').setRequired(true).addChoices(
+          { name: 'Coins', value: 'coins' },
+          { name: 'Butterflies', value: 'butterflies' },
+          { name: 'Card', value: 'card' }
+        )
       )
-      .addIntegerOption(o =>
-        o.setName('amount')
-          .setDescription('Amount (for coins/butterflies)')
-          .setRequired(false)
-      )
-      .addStringOption(o =>
-        o.setName('card_id')
-          .setDescription('Card ID (ALL CAPS, for card gifts)')
-          .setRequired(false)
-      ),
+      .addIntegerOption(o => o.setName('amount').setDescription('Amount (for coins/butterflies)').setRequired(false))
+      .addStringOption(o => o.setName('card_id').setDescription('Card ID (ALL CAPS, for card gifts)').setRequired(false)),
+
+    // ✅ addcard korrekt + Bild per URL oder Attachment
     new SlashCommandBuilder()
       .setName('addcard')
       .setDescription('STAFF ONLY – create a new card')
       .addStringOption(o =>
-        o.setName('card_id')
-          .setDescription(
-            'ID template (ALL CAPS): {R}{GG}{II}V{V}{EE} → R=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99. Examples: CXLHYV101, ESXLHYV101, ELXLHYV101'
-          )
-          .setRequired(true)
+        o.setName('card_id').setDescription(
+          'ID template (ALL CAPS): {R}{GG}{II}V{V}{EE} → R=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99. Examples: CXLHYV101, ESXLHYV101, ELXLHYV101'
+        ).setRequired(true)
+      )
+      .addStringOption(o => o.setName('group').setDescription('Group name (XLOV, etc.)').setRequired(true))
+      .addStringOption(o => o.setName('idol').setDescription('Idol / member name').setRequired(true))
+      .addStringOption(o =>
+        o.setName('rarity').setDescription('Card rarity').setRequired(true).addChoices(
+          { name: 'common', value: 'common' },
+          { name: 'rare', value: 'rare' },
+          { name: 'super_rare', value: 'super_rare' },
+          { name: 'ultra_rare', value: 'ultra_rare' },
+          { name: 'legendary', value: 'legendary' },
+          { name: 'event', value: 'event' },
+          { name: 'limited', value: 'limited' }
+        )
       )
       .addStringOption(o =>
-        o.setName('group')
-          .setDescription('Group name (XLOV, etc.)')
-          .setRequired(true)
+        o.setName('type').setDescription('Card type (reg, event, limited)').setRequired(true).addChoices(
+          { name: 'Regular', value: 'reg' },
+          { name: 'Event', value: 'event' },
+          { name: 'Limited', value: 'limited' }
+        )
       )
+      .addStringOption(o => o.setName('era').setDescription('Era / concept (e.g. Bloom, Winter)').setRequired(true))
+      .addStringOption(o => o.setName('version').setDescription('Version inside that era (e.g. Ver. A, PC 03)').setRequired(true))
       .addStringOption(o =>
-        o.setName('idol')
-          .setDescription('Idol / member name')
-          .setRequired(true)
+        o.setName('image').setDescription('Image URL (optional if you upload a file)').setRequired(false)
       )
-      .addStringOption(o =>
-        o.setName('rarity')
-          .setDescription('Card rarity')
-          .setRequired(true)
-          .addChoices(
-            { name: 'common', value: 'common' },
-            { name: 'rare', value: 'rare' },
-            { name: 'super_rare', value: 'super_rare' },
-            { name: 'ultra_rare', value: 'ultra_rare' },
-            { name: 'legendary', value: 'legendary' },
-            { name: 'event', value: 'event' },
-            { name: 'limited', value: 'limited' }
-          )
-      )
-      .addStringOption(o =>
-        o.setName('type')
-          .setDescription('Card type (reg, event, limited)')
-          .setRequired(true)
-          .addChoices(
-            { name: 'Regular', value: 'reg' },
-            { name: 'Event', value: 'event' },
-            { name: 'Limited', value: 'limited' }
-          )
-      )
-      .addStringOption(o =>
-        o.setName('era')
-          .setDescription('Era / concept (e.g. Bloom, Winter)')
-          .setRequired(true)
-      )
-      .addStringOption(o =>
-        o.setName('version')
-          .setDescription('Version inside that era (e.g. Ver. A, PC 03)')
-          .setRequired(true)
-      )
-      // replace your existing image option + add attachment option
-.addStringOption(o =>
-  o.setName('image')
-    .setDescription('Image URL (optional if you upload a file)')
-    .setRequired(false)
-)
-.addAttachmentOption(o =>
-  o.setName('image_file')
-    .setDescription('Upload the card image (PNG/JPG/GIF/WebP)')
-    .setRequired(false)
-)
+      .addAttachmentOption(o =>
+        o.setName('image_file').setDescription('Upload the card image (PNG/JPG/GIF/WebP)').setRequired(false)
       )
       .addBooleanOption(o =>
-        o.setName('droppable')
-          .setDescription('Should this card drop in /drop?')
-          .setRequired(true)
-      )
+        o.setName('droppable').setDescription('Should this card drop in /drop?').setRequired(true)
+      ),
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-
-  await rest.put(
-    Routes.applicationCommands(process.env.CLIENT_ID),
-    { body: commands }
-  );
+  await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
   console.log('Slash commands registered (global)');
 }
 
 /* ----------------------------------------------------
    Events
 ---------------------------------------------------- */
-
 const WORK_MESSAGES = [
   "You’ve been working so hard again... Hyun said you deserve a break.",
   "You showed up again. I’m proud of you — even if Haru keeps stealing your snacks during breaks.",
@@ -375,11 +250,7 @@ const WORK_MESSAGES = [
 
 client.once(Events.ClientReady, async (c) => {
   console.log("Logged in as " + c.user.tag);
-  try {
-    await registerCommands();
-  } catch (err) {
-    console.error('Failed to register commands:', err);
-  }
+  try { await registerCommands(); } catch (err) { console.error('Failed to register commands:', err); }
 });
 
 /* ----------------------------------------------------
@@ -393,9 +264,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const id = i.user.id;
       const u = users[id];
 
-      if (!u || !u.pendingDrop) {
-        return i.reply({ content: 'You have no active drop.', ephemeral: true });
-      }
+      if (!u || !u.pendingDrop) return i.reply({ content: 'You have no active drop.', ephemeral: true });
 
       const now = Date.now();
       if (u.pendingDrop.expiresAt && now > u.pendingDrop.expiresAt) {
@@ -406,12 +275,9 @@ client.on(Events.InteractionCreate, async (i) => {
 
       const idx = parseInt(i.customId.split('_').pop(), 10);
       const cards = u.pendingDrop.cards || [];
-      if (!cards[idx]) {
-        return i.reply({ content: 'This card is not available anymore.', ephemeral: true });
-      }
+      if (!cards[idx]) return i.reply({ content: 'This card is not available anymore.', ephemeral: true });
 
       const chosen = cards[idx];
-
       const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
       if (!Array.isArray(allUserCards[id])) allUserCards[id] = [];
       allUserCards[id].push(chosen);
@@ -442,18 +308,9 @@ client.on(Events.InteractionCreate, async (i) => {
 
     if (!users[id]) {
       users[id] = {
-        id,
-        name,
-        coins: 0,
-        butterflies: 0,
-        created: new Date().toISOString(),
-        lastDaily: null,
-        lastWeekly: null,
-        lastMonthly: null,
-        lastWork: null,
-        lastDrop: null,
-        pendingDrop: null,
-        lastClaim: null
+        id, name, coins: 0, butterflies: 0, created: new Date().toISOString(),
+        lastDaily: null, lastWeekly: null, lastMonthly: null, lastWork: null,
+        lastDrop: null, pendingDrop: null, lastClaim: null
       };
       await saveJsonOrRemote(USERS_FILE, users);
     }
@@ -467,8 +324,7 @@ client.on(Events.InteractionCreate, async (i) => {
     /* /overview */
     if (i.commandName === 'overview') {
       return i.reply({
-        embeds: [ruiEmbed(
-          'Rui Command Overview',
+        embeds: [ruiEmbed('Rui Command Overview',
           'Here’s a quick summary of all available commands:',
           [
             { name: '/start', value: 'Create your collector profile' },
@@ -490,23 +346,12 @@ client.on(Events.InteractionCreate, async (i) => {
     if (i.commandName === 'start') {
       const all = await loadJsonOrRemote(USERS_FILE, {});
       if (all[id]) {
-        return i.reply({
-          embeds: [ruiEmbed('Already started', `Oh! Seems like you already created a profile, ${name}. Have fun playing.`)]
-        });
+        return i.reply({ embeds: [ruiEmbed('Already started', `Oh! Seems like you already created a profile, ${name}. Have fun playing.`)] });
       }
       all[id] = {
-        id,
-        name,
-        coins: 0,
-        butterflies: 0,
-        created: new Date().toISOString(),
-        lastDaily: null,
-        lastWeekly: null,
-        lastMonthly: null,
-        lastWork: null,
-        lastDrop: null,
-        pendingDrop: null,
-        lastClaim: null
+        id, name, coins: 0, butterflies: 0, created: new Date().toISOString(),
+        lastDaily: null, lastWeekly: null, lastMonthly: null, lastWork: null,
+        lastDrop: null, pendingDrop: null, lastClaim: null
       };
       await saveJsonOrRemote(USERS_FILE, all);
       return i.reply({ embeds: [ruiEmbed('Profile created', `Hi ${name}. Your collector profile has been created.`)] });
@@ -517,15 +362,11 @@ client.on(Events.InteractionCreate, async (i) => {
       const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
       const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
       return i.reply({
-        embeds: [ruiEmbed(
-          `${name}'s Balance`,
-          `Here’s your current collector data. Keep playing to get more.`,
-          [
-            { name: '🪙 Coins', value: String(u.coins), inline: true },
-            { name: '🦋 Butterflies', value: String(u.butterflies), inline: true },
-            { name: '✨ Cards', value: String(myCards.length), inline: true }
-          ]
-        )]
+        embeds: [ruiEmbed(`${name}'s Balance`, `Here’s your current collector data. Keep playing to get more.`, [
+          { name: '🪙 Coins', value: String(u.coins), inline: true },
+          { name: '🦋 Butterflies', value: String(u.butterflies), inline: true },
+          { name: '✨ Cards', value: String(myCards.length), inline: true }
+        ])]
       });
     }
 
@@ -542,19 +383,15 @@ client.on(Events.InteractionCreate, async (i) => {
 
       const coins = rand(200, 750);
       const butterflies = rand(3, 20);
-      u.coins += coins;
-      u.butterflies += butterflies;
-      u.lastDaily = new Date().toISOString();
+      u.coins += coins; u.butterflies += butterflies; u.lastDaily = new Date().toISOString();
       await saveJsonOrRemote(USERS_FILE, users);
 
-      return i.reply({
-        embeds: [ruiEmbed('Daily collected', `${name}, here is what I found for you today.`, [
-          { name: '🪙 Coins', value: `+${coins}`, inline: true },
-          { name: '🦋 Butterflies', value: `+${butterflies}`, inline: true },
-          { name: '✨ Cards', value: 'No cards available yet', inline: false },
-          { name: 'New total', value: `${u.coins} 🪙 / ${u.butterflies} 🦋`, inline: false }
-        ])]
-      });
+      return i.reply({ embeds: [ruiEmbed('Daily collected', `${name}, here is what I found for you today.`, [
+        { name: '🪙 Coins', value: `+${coins}`, inline: true },
+        { name: '🦋 Butterflies', value: `+${butterflies}`, inline: true },
+        { name: '✨ Cards', value: 'No cards available yet', inline: false },
+        { name: 'New total', value: `${u.coins} 🪙 / ${u.butterflies} 🦋`, inline: false }
+      ])] });
     }
 
     /* /weekly */
@@ -570,19 +407,15 @@ client.on(Events.InteractionCreate, async (i) => {
 
       const coins = rand(900, 1800);
       const butterflies = rand(10, 35);
-      u.coins += coins;
-      u.butterflies += butterflies;
-      u.lastWeekly = new Date().toISOString();
+      u.coins += coins; u.butterflies += butterflies; u.lastWeekly = new Date().toISOString();
       await saveJsonOrRemote(USERS_FILE, users);
 
-      return i.reply({
-        embeds: [ruiEmbed('Weekly collected', `Weekly rewards for ${name}.`, [
-          { name: '🪙 Coins', value: `+${coins}`, inline: true },
-          { name: '🦋 Butterflies', value: `+${butterflies}`, inline: true },
-          { name: '✨ Cards', value: 'No cards available yet', inline: false },
-          { name: 'New total', value: `${u.coins} 🪙 / ${u.butterflies} 🦋`, inline: false }
-        ])]
-      });
+      return i.reply({ embeds: [ruiEmbed('Weekly collected', `Weekly rewards for ${name}.`, [
+        { name: '🪙 Coins', value: `+${coins}`, inline: true },
+        { name: '🦋 Butterflies', value: `+${butterflies}`, inline: true },
+        { name: '✨ Cards', value: 'No cards available yet', inline: false },
+        { name: 'New total', value: `${u.coins} 🪙 / ${u.butterflies} 🦋`, inline: false }
+      ])] });
     }
 
     /* /monthly */
@@ -598,19 +431,15 @@ client.on(Events.InteractionCreate, async (i) => {
 
       const coins = rand(2500, 5000);
       const butterflies = rand(25, 70);
-      u.coins += coins;
-      u.butterflies += butterflies;
-      u.lastMonthly = new Date().toISOString();
+      u.coins += coins; u.butterflies += butterflies; u.lastMonthly = new Date().toISOString();
       await saveJsonOrRemote(USERS_FILE, users);
 
-      return i.reply({
-        embeds: [ruiEmbed('Monthly collected', `Big drop for ${name}.`, [
-          { name: '🪙 Coins', value: `+${coins}`, inline: true },
-          { name: '🦋 Butterflies', value: `+${butterflies}`, inline: true },
-          { name: '✨ Cards', value: 'No cards available yet', inline: false },
-          { name: 'New total', value: `${u.coins} 🪙 / ${u.butterflies} 🦋`, inline: false }
-        ])]
-      });
+      return i.reply({ embeds: [ruiEmbed('Monthly collected', `Big drop for ${name}.`, [
+        { name: '🪙 Coins', value: `+${coins}`, inline: true },
+        { name: '🦋 Butterflies', value: `+${butterflies}`, inline: true },
+        { name: '✨ Cards', value: 'No cards available yet', inline: false },
+        { name: 'New total', value: `${u.coins} 🪙 / ${u.butterflies} 🦋`, inline: false }
+      ])] });
     }
 
     /* /work */
@@ -621,23 +450,17 @@ client.on(Events.InteractionCreate, async (i) => {
       if (u.lastWork && now - new Date(u.lastWork).getTime() < COOLDOWN) {
         const leftMs = COOLDOWN - (now - new Date(u.lastWork).getTime());
         const leftMins = Math.ceil(leftMs / (60 * 1000));
-        return i.reply({
-          embeds: [ruiEmbed('Not yet', `You already helped out recently. Come back in ${leftMins} minute(s).`)]
-        });
+        return i.reply({ embeds: [ruiEmbed('Not yet', `You already helped out recently. Come back in ${leftMins} minute(s).`)] });
       }
 
       const coins = rand(200, 750);
       const butterflies = rand(3, 20);
       const msg = WORK_MESSAGES[Math.floor(Math.random() * WORK_MESSAGES.length)];
 
-      u.coins += coins;
-      u.butterflies += butterflies;
-      u.lastWork = new Date().toISOString();
+      u.coins += coins; u.butterflies += butterflies; u.lastWork = new Date().toISOString();
       await saveJsonOrRemote(USERS_FILE, users);
 
-      return i.reply({
-        embeds: [ruiEmbed('Work complete', `${msg}\nYou earned ${coins} 🪙 and ${butterflies} 🦋.\nNew total: ${u.coins} 🪙 / ${u.butterflies} 🦋.`)]
-      });
+      return i.reply({ embeds: [ruiEmbed('Work complete', `${msg}\nYou earned ${coins} 🪙 and ${butterflies} 🦋.\nNew total: ${u.coins} 🪙 / ${u.butterflies} 🦋.`)] });
     }
 
     /* /inventory */
@@ -646,19 +469,12 @@ client.on(Events.InteractionCreate, async (i) => {
       const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
 
       if (!myCards.length) {
-        return i.reply({
-          embeds: [ruiEmbed(
-            `${name}'s Inventory`,
-            "You don't have any cards yet. Try `/drop` or buy a pack later."
-          )]
-        });
+        return i.reply({ embeds: [ruiEmbed(`${name}'s Inventory`, "You don't have any cards yet. Try `/drop` or buy a pack later.")] });
       }
 
       const firstTen = myCards.slice(0, 10);
-
       return i.reply({
-        embeds: [ruiEmbed(
-          `${name}'s Inventory`,
+        embeds: [ruiEmbed(`${name}'s Inventory`,
           `You currently own **${myCards.length}** card(s). Showing first ${firstTen.length}:`,
           firstTen.map((c, idx) => ({
             name: `#${idx + 1} • ${c.group} — ${c.member}`,
@@ -678,38 +494,25 @@ client.on(Events.InteractionCreate, async (i) => {
       const wanted = allCards.find(c => c.id === cardId);
 
       if (!wanted) {
-        return i.reply({
-          embeds: [ruiEmbed('Not found', `There is no card with ID **${cardId}**.`)],
-          ephemeral: true
-        });
+        return i.reply({ embeds: [ruiEmbed('Not found', `There is no card with ID **${cardId}**.`)], ephemeral: true });
       }
 
       const rarity = wanted.rarity || 'common';
 
       if (rarity === 'event' || rarity === 'limited') {
-        return i.reply({
-          embeds: [ruiEmbed('Not buyable', `Cards with rarity **${rarity}** cannot be bought. Try drops or events.`)],
-          ephemeral: true
-        });
+        return i.reply({ embeds: [ruiEmbed('Not buyable', `Cards with rarity **${rarity}** cannot be bought. Try drops or events.`)], ephemeral: true });
       }
 
       const price = RARITY_PRICES[rarity];
       if (!price) {
-        return i.reply({
-          embeds: [ruiEmbed('Not buyable', `Cards with rarity **${rarity}** cannot be bought.`)],
-          ephemeral: true
-        });
+        return i.reply({ embeds: [ruiEmbed('Not buyable', `Cards with rarity **${rarity}** cannot be bought.`)], ephemeral: true });
       }
 
       if (u.coins < price) {
-        return i.reply({
-          embeds: [ruiEmbed('Not enough coins', `This card costs **${price}** 🪙 but you only have **${u.coins}**.`)],
-          ephemeral: true
-        });
+        return i.reply({ embeds: [ruiEmbed('Not enough coins', `This card costs **${price}** 🪙 but you only have **${u.coins}**.`)], ephemeral: true });
       }
 
       u.coins -= price;
-
       const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
       if (!Array.isArray(allUserCards[id])) allUserCards[id] = [];
       allUserCards[id].push(wanted);
@@ -717,12 +520,7 @@ client.on(Events.InteractionCreate, async (i) => {
       await saveJsonOrRemote(USERS_FILE, users);
       await saveJsonOrRemote(USER_CARDS_FILE, allUserCards);
 
-      return i.reply({
-        embeds: [ruiEmbed(
-          'Card bought',
-          `You bought **${wanted.id}** (${wanted.group} — ${wanted.member}) • **${rarity}** for **${price}** 🪙`
-        )]
-      });
+      return i.reply({ embeds: [ruiEmbed('Card bought', `You bought **${wanted.id}** (${wanted.group} — ${wanted.member}) • **${rarity}** for **${price}** 🪙`)] });
     }
 
     /* /gift */
@@ -733,60 +531,29 @@ client.on(Events.InteractionCreate, async (i) => {
       const cardIdInput = i.options.getString('card_id');
       const cardId = cardIdInput ? cardIdInput.toUpperCase() : null;
 
-      if (!targetUser) {
-        return i.reply({ embeds: [ruiEmbed('No target', 'You have to pick someone to gift to.')] });
-      }
-
-      if (targetUser.id === id) {
-        return i.reply({ embeds: [ruiEmbed('…No.', 'You can’t gift to yourself 😒')] });
-      }
+      if (!targetUser) return i.reply({ embeds: [ruiEmbed('No target', 'You have to pick someone to gift to.')] });
+      if (targetUser.id === id) return i.reply({ embeds: [ruiEmbed('…No.', 'You can’t gift to yourself 😒')] });
 
       if (!users[targetUser.id]) {
         users[targetUser.id] = {
-          id: targetUser.id,
-          name: targetUser.username,
-          coins: 0,
-          butterflies: 0,
-          created: new Date().toISOString(),
-          lastDaily: null,
-          lastWeekly: null,
-          lastMonthly: null,
-          lastWork: null,
-          lastDrop: null,
-          pendingDrop: null,
-          lastClaim: null
+          id: targetUser.id, name: targetUser.username, coins: 0, butterflies: 0, created: new Date().toISOString(),
+          lastDaily: null, lastWeekly: null, lastMonthly: null, lastWork: null, lastDrop: null, pendingDrop: null, lastClaim: null
         };
       }
 
       const receiver = users[targetUser.id];
 
       if (what === 'coins' || what === 'butterflies') {
-        if (!amount || amount <= 0) {
-          return i.reply({ embeds: [ruiEmbed('Missing amount', 'Tell me how many you want to send.')] });
-        }
-
+        if (!amount || amount <= 0) return i.reply({ embeds: [ruiEmbed('Missing amount', 'Tell me how many you want to send.')] });
         if (what === 'coins') {
-          if (u.coins < amount) {
-            return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.coins} coins.`)], ephemeral: true });
-          }
-          u.coins -= amount;
-          receiver.coins += amount;
+          if (u.coins < amount) return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.coins} coins.`)], ephemeral: true });
+          u.coins -= amount; receiver.coins += amount;
         } else {
-          if (u.butterflies < amount) {
-            return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.butterflies} butterflies.`)], ephemeral: true });
-          }
-          u.butterflies -= amount;
-          receiver.butterflies += amount;
+          if (u.butterflies < amount) return i.reply({ embeds: [ruiEmbed('Not enough', `You only have ${u.butterflies} butterflies.`)], ephemeral: true });
+          u.butterflies -= amount; receiver.butterflies += amount;
         }
-
         await saveJsonOrRemote(USERS_FILE, users);
-
-        return i.reply({
-          embeds: [ruiEmbed(
-            'Gift sent',
-            `${name} sent **${amount}** ${what === 'coins' ? '🪙 coins' : '🦋 butterflies'} to ${targetUser.username}.`
-          )]
-        });
+        return i.reply({ embeds: [ruiEmbed('Gift sent', `${name} sent **${amount}** ${what === 'coins' ? '🪙 coins' : '🦋 butterflies'} to ${targetUser.username}.`)] });
       }
 
       if (what === 'card') {
@@ -794,20 +561,10 @@ client.on(Events.InteractionCreate, async (i) => {
         const senderCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
         const receiverCards = Array.isArray(allUserCards[targetUser.id]) ? allUserCards[targetUser.id] : [];
 
-        if (!cardId) {
-          return i.reply({
-            embeds: [ruiEmbed('Missing card', 'Tell me which card ID you want to send (ALL CAPS).')],
-            ephemeral: true
-          });
-        }
+        if (!cardId) return i.reply({ embeds: [ruiEmbed('Missing card', 'Tell me which card ID you want to send (ALL CAPS).')], ephemeral: true });
 
         const idx = senderCards.findIndex(c => c.id === cardId);
-        if (idx === -1) {
-          return i.reply({
-            embeds: [ruiEmbed('Not found', `You don’t own a card with ID **${cardId}**.`)],
-            ephemeral: true
-          });
-        }
+        if (idx === -1) return i.reply({ embeds: [ruiEmbed('Not found', `You don’t own a card with ID **${cardId}**.`)], ephemeral: true });
 
         const cardToSend = senderCards.splice(idx, 1)[0];
         receiverCards.push(cardToSend);
@@ -816,12 +573,7 @@ client.on(Events.InteractionCreate, async (i) => {
         allUserCards[targetUser.id] = receiverCards;
         await saveJsonOrRemote(USER_CARDS_FILE, allUserCards);
 
-        return i.reply({
-          embeds: [ruiEmbed(
-            'Card sent',
-            `${name} sent **${cardToSend.id}** (${cardToSend.group} — ${cardToSend.member}) to ${targetUser.username}.`
-          )]
-        });
+        return i.reply({ embeds: [ruiEmbed('Card sent', `${name} sent **${cardToSend.id}** (${cardToSend.group} — ${cardToSend.member}) to ${targetUser.username}.`)] });
       }
 
       return i.reply({ embeds: [ruiEmbed('Unknown thing', 'You can gift `coins`, `butterflies` or `card`.')] });
@@ -831,30 +583,34 @@ client.on(Events.InteractionCreate, async (i) => {
     if (i.commandName === 'addcard') {
       const staffEnv = process.env.STAFF_IDS || '';
       const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
-
       if (!staffList.includes(id)) {
-        return i.reply({
-          embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')],
-          ephemeral: true
-        });
+        return i.reply({ embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')], ephemeral: true });
       }
 
       // normalize to ALL CAPS immediately
       const cardIdRaw = i.options.getString('card_id') || '';
       const cardId = cardIdRaw.toUpperCase();
 
-      const rarity = i.options.getString('rarity');
-      const group = i.options.getString('group');
-      const idol = i.options.getString('idol');
-      const era = i.options.getString('era') || null;
+      const rarity  = i.options.getString('rarity');
+      const group   = i.options.getString('group');
+      const idol    = i.options.getString('idol');
+      const era     = i.options.getString('era') || null;
       const version = i.options.getString('version') || null;
-      const ctype = i.options.getString('type');
+      const ctype   = i.options.getString('type');
       const droppable = i.options.getBoolean('droppable');
+
+      // Bild (URL optional) + Attachment (optional) -> Attachment hat Vorrang
+      const imageUrlOpt = i.options.getString('image') || null;
+      const imageFile   = i.options.getAttachment('image_file') || null;
+      let image = imageUrlOpt;
+      if (imageFile && imageFile.url) {
+        const ct = (imageFile.contentType || '').toLowerCase();
+        if (!ct || ct.startsWith('image/')) image = imageFile.url;
+      }
 
       if (!ID_REGEX.test(cardId)) {
         return i.reply({
-          embeds: [ruiEmbed(
-            'Invalid card_id',
+          embeds: [ruiEmbed('Invalid card_id',
             'Use **{R}{GG}{II}V{V}{EE}** (ALL CAPS)\nR=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99\nExamples: **CXLHYV101**, **ESXLHYV101**, **ELXLHYV101**'
           )],
           ephemeral: true
@@ -863,49 +619,26 @@ client.on(Events.InteractionCreate, async (i) => {
 
       // Rarity prefix vs selected rarity
       const expected = rarityLetterMap[rarity] || 'C';
-      const prefix = (cardId.startsWith('ES') || cardId.startsWith('EL'))
-        ? cardId.slice(0, 2)
-        : cardId.slice(0, 1);
-
+      const prefix = (cardId.startsWith('ES') || cardId.startsWith('EL')) ? cardId.slice(0, 2) : cardId.slice(0, 1);
       if (prefix !== expected) {
         return i.reply({
-          embeds: [ruiEmbed(
-            'Rarity mismatch',
-            `ID starts with **${prefix}**, but rarity is **${rarity}** (expected **${expected}**).`
-          )],
+          embeds: [ruiEmbed('Rarity mismatch', `ID starts with **${prefix}**, but rarity is **${rarity}** (expected **${expected}**).`)],
           ephemeral: true
         });
       }
 
       const cards = await loadJsonOrRemote(CARDS_FILE, []);
       if (cards.find(c => c.id === cardId)) {
-        return i.reply({
-          embeds: [ruiEmbed('Already exists', `There is already a card with ID **${cardId}**.`)],
-          ephemeral: true
-        });
+        return i.reply({ embeds: [ruiEmbed('Already exists', `There is already a card with ID **${cardId}**.`)], ephemeral: true });
       }
 
-      const newCard = {
-        id: cardId,
-        group: group,
-        member: idol,
-        era: era,
-        version: version,
-        image: image,
-        rarity: rarity,
-        type: ctype,
-        droppable: droppable
-      };
-
+      const newCard = { id: cardId, group, member: idol, era, version, image, rarity, type: ctype, droppable };
       cards.push(newCard);
       await saveJsonOrRemote(CARDS_FILE, cards);
 
-      return i.reply({
-        embeds: [ruiEmbed(
-          'Card created',
-          `New card was added.\nID: **${cardId}**\nGroup: **${group}**\nIdol: **${idol}**\nRarity: **${rarity}**\nType: **${ctype}**\nDroppable: **${droppable ? 'yes' : 'no'}**\nEra: **${era || '—'}**\nVersion: **${version || '—'}**`
-        )]
-      });
+      return i.reply({ embeds: [ruiEmbed('Card created',
+        `New card was added.\nID: **${cardId}**\nGroup: **${group}**\nIdol: **${idol}**\nRarity: **${rarity}**\nType: **${ctype}**\nDroppable: **${droppable ? 'yes' : 'no'}**\nEra: **${era || '—'}**\nVersion: **${version || '—'}**`
+      )] });
     }
 
     /* /claim */
@@ -913,17 +646,11 @@ client.on(Events.InteractionCreate, async (i) => {
       const now = Date.now();
       const COOLDOWN = 90 * 1000;
       const cards = await loadJsonOrRemote(CARDS_FILE, []);
-
-      if (!cards.length) {
-        return i.reply({ embeds: [ruiEmbed('No cards available', 'There are no cards to claim yet.')] });
-      }
+      if (!cards.length) return i.reply({ embeds: [ruiEmbed('No cards available', 'There are no cards to claim yet.')] });
 
       if (u.lastClaim && now - new Date(u.lastClaim).getTime() < COOLDOWN) {
         const left = Math.ceil((COOLDOWN - (now - new Date(u.lastClaim).getTime())) / 1000);
-        return i.reply({
-          embeds: [ruiEmbed('Cooldown', `Please wait **${left} seconds** before claiming again.`)],
-          ephemeral: true
-        });
+        return i.reply({ embeds: [ruiEmbed('Cooldown', `Please wait **${left} seconds** before claiming again.`)], ephemeral: true });
       }
 
       const pool = cards.filter(c => c.droppable !== false && c.type !== 'event' && c.type !== 'limited');
@@ -949,9 +676,7 @@ client.on(Events.InteractionCreate, async (i) => {
     /* /drop */
     if (i.commandName === 'drop') {
       const cards = await loadJsonOrRemote(CARDS_FILE, []);
-      if (!cards.length) {
-        return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
-      }
+      if (!cards.length) return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
 
       const now = Date.now();
 
@@ -974,11 +699,7 @@ client.on(Events.InteractionCreate, async (i) => {
           )
           .setColor(0xFFB6C1);
 
-        return i.reply({
-          embeds: [embed],
-          components: [row],
-          ephemeral: true
-        });
+        return i.reply({ embeds: [embed], components: [row], ephemeral: true });
       }
 
       if (u.lastDrop) {
@@ -986,35 +707,21 @@ client.on(Events.InteractionCreate, async (i) => {
         const COOLDOWN = 60 * 1000;
         if (diff < COOLDOWN) {
           const left = Math.ceil((COOLDOWN - diff) / 1000);
-          return i.reply({
-            embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)],
-            ephemeral: true
-          });
+          return i.reply({ embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)], ephemeral: true });
         }
       }
 
       const boostType = getActiveBoost(u);
       const pulled = [];
-
       for (let n = 0; n < 3; n++) {
         const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, boostType);
-
-        const pool = cards.filter(
-          c => c.rarity === rarity && c.droppable !== false
-        );
-
-        const finalPool = pool.length
-          ? pool
-          : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
-
+        const pool = cards.filter(c => c.rarity === rarity && c.droppable !== false);
+        const finalPool = pool.length ? pool : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
         const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
         pulled.push({ ...chosen });
       }
 
-      u.pendingDrop = {
-        cards: pulled,
-        expiresAt: now + 60 * 1000
-      };
+      u.pendingDrop = { cards: pulled, expiresAt: now + 60 * 1000 };
       await saveJsonOrRemote(USERS_FILE, users);
 
       const row = new ActionRowBuilder().addComponents(
@@ -1033,18 +740,12 @@ client.on(Events.InteractionCreate, async (i) => {
         )
         .setColor(0xFFB6C1);
 
-      return i.reply({
-        embeds: [embed],
-        components: [row],
-        ephemeral: true
-      });
+      return i.reply({ embeds: [embed], components: [row], ephemeral: true });
     }
 
   } catch (err) {
     console.error(err);
-    if (i.replied || i.deferred) {
-      return;
-    }
+    if (i.replied || i.deferred) return;
     return i.reply({ embeds: [ruiEmbed('Error', 'Something went wrong in Rui. Check logs.')] });
   }
 });
