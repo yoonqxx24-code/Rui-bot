@@ -328,10 +328,17 @@ async function registerCommands() {
           .setDescription('Version inside that era (e.g. Ver. A, PC 03)')
           .setRequired(true)
       )
-      .addStringOption(o =>
-        o.setName('image')
-          .setDescription('Image URL')
-          .setRequired(true)
+      // replace your existing image option + add attachment option
+.addStringOption(o =>
+  o.setName('image')
+    .setDescription('Image URL (optional if you upload a file)')
+    .setRequired(false)
+)
+.addAttachmentOption(o =>
+  o.setName('image_file')
+    .setDescription('Upload the card image (PNG/JPG/GIF/WebP)')
+    .setRequired(false)
+)
       )
       .addBooleanOption(o =>
         o.setName('droppable')
@@ -841,7 +848,6 @@ client.on(Events.InteractionCreate, async (i) => {
       const idol = i.options.getString('idol');
       const era = i.options.getString('era') || null;
       const version = i.options.getString('version') || null;
-      const image = i.options.getString('image') || null;
       const ctype = i.options.getString('type');
       const droppable = i.options.getBoolean('droppable');
 
