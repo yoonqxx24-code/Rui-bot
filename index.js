@@ -259,7 +259,9 @@ async function registerCommands() {
       .setDescription('STAFF ONLY – create a new card')
       .addStringOption(o =>
         o.setName('card_id')
-          .setDescription('Unique card ID (e.g. xlov-rui-001)')
+          .setDescription(
+            'ID template: {r}{GG}{II}v{V}{EE} → r=c/r/s/u/l · GG=Group(2) · II=Idol(2) · V=Version(1..∞) · EE=Era(2, 01..99). Example: cXLHYv101'
+          )
           .setRequired(true)
       )
       .addStringOption(o =>
@@ -458,12 +460,15 @@ client.on(Events.InteractionCreate, async (i) => {
       });
     }
 
-    /* /start */
+    /* /start — NEVER overwrite */
     if (i.commandName === 'start') {
-      if (u && u.created) {
-        return i.reply({ embeds: [ruiEmbed('Profile already exists', `Oh! Seems like you already created a profile, ${name}. Have fun playing.`)] });
+      const all = await loadJsonOrRemote(USERS_FILE, {});
+      if (all[id]) {
+        return i.reply({
+          embeds: [ruiEmbed('Already started', `Oh! Seems like you already created a profile, ${name}. Have fun playing.`)]
+        });
       }
-      users[id] = {
+      all[id] = {
         id,
         name,
         coins: 0,
@@ -477,7 +482,7 @@ client.on(Events.InteractionCreate, async (i) => {
         pendingDrop: null,
         lastClaim: null
       };
-      await saveJsonOrRemote(USERS_FILE, users);
+      await saveJsonOrRemote(USERS_FILE, all);
       return i.reply({ embeds: [ruiEmbed('Profile created', `Hi ${name}. Your collector profile has been created.`)] });
     }
 
@@ -794,7 +799,7 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ embeds: [ruiEmbed('Unknown thing', 'You can gift `coins`, `butterflies` or `card`.')] });
     }
 
-    /* /addcard (STAFF) */
+    /* /addcard (STAFF + Template-Check) */
     if (i.commandName === 'addcard') {
       const staffEnv = process.env.STAFF_IDS || '';
       const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
@@ -816,8 +821,39 @@ client.on(Events.InteractionCreate, async (i) => {
       const ctype = i.options.getString('type');
       const droppable = i.options.getBoolean('droppable');
 
-      const cards = await loadJsonOrRemote(CARDS_FILE, []);
+      // Template: {r}{GG}{II}v{V}{EE}
+      // r=c|r|s|u|l  · GG=[A-Za-z]{2} · II=[A-Za-z]{2} · V=[1-9]\d* · EE=(01..99)
+      const ID_REGEX = /^[crsul][A-Za-z]{2}[A-Za-z]{2}v([1-9]\d*)(0[1-9]|[1-9]\d)$/;
+      if (!ID_REGEX.test(cardId)) {
+        return i.reply({
+          embeds: [ruiEmbed(
+            'Invalid card_id',
+            'Use **{r}{GG}{II}v{V}{EE}** → r=c/r/s/u/l · GG=Group(2) · II=Idol(2) · V=Version(1..∞) · EE=Era(2, 01..99)\nExample: **cXLHYv101**'
+          )],
+          ephemeral: true
+        });
+      }
 
+      // Rarity-Letter vs. ausgewählte rarity prüfen
+      const rarityLetterMap = {
+        common: 'c',
+        rare: 'r',
+        super_rare: 's',
+        ultra_rare: 'u',
+        legendary: 'l'
+      };
+      const expectedLetter = rarityLetterMap[rarity] || 'c';
+      if (cardId[0] !== expectedLetter && (rarity === 'common' || rarity === 'rare' || rarity === 'super_rare' || rarity === 'ultra_rare' || rarity === 'legendary')) {
+        return i.reply({
+          embeds: [ruiEmbed(
+            'Rarity mismatch',
+            `ID starts with **${cardId[0]}**, but rarity is **${rarity}** (expected **${expectedLetter}**).`
+          )],
+          ephemeral: true
+        });
+      }
+
+      const cards = await loadJsonOrRemote(CARDS_FILE, []);
       if (cards.find(c => c.id === cardId)) {
         return i.reply({
           embeds: [ruiEmbed('Already exists', `There is already a card with ID **${cardId}**.`)],
