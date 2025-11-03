@@ -238,17 +238,19 @@ async function registerCommands() {
       .setDescription('Version inside that era (e.g. Ver. A, PC 03)')
       .setRequired(true)
   )
-  // URL optional …
-  .addStringOption(o =>
-    o.setName('image')
-      .setDescription('Image URL (optional if you upload a file)')
-      .setRequired(false)
-  )
-  // … und Attachment optional
-  .addAttachmentOption(o =>
-    o.setName('image_file')
-      .setDescription('Upload the card image (PNG/JPG/GIF/WebP)')
-      .setRequired(false)
+ // … oberhalb stehen era/version …
+
+.addAttachmentOption(o =>
+  o.setName('image')
+    .setDescription('Upload the card image (PNG/JPG/GIF/WebP)')
+    .setRequired(true)
+)
+
+.addBooleanOption(o =>
+  o.setName('droppable')
+    .setDescription('Should this card drop in /drop?')
+    .setRequired(true)
+)
   )
   .addBooleanOption(o =>
     o.setName('droppable')
@@ -623,24 +625,38 @@ client.on(Events.InteractionCreate, async (i) => {
       }
 
       // normalize to ALL CAPS immediately
-      const cardIdRaw = i.options.getString('card_id') || '';
-      const cardId = cardIdRaw.toUpperCase();
+const cardIdRaw = i.options.getString('card_id') || '';
+const cardId = cardIdRaw.toUpperCase();
 
-      const rarity  = i.options.getString('rarity');
-      const group   = i.options.getString('group');
-      const idol    = i.options.getString('idol');
-      const era     = i.options.getString('era') || null;
-      const version = i.options.getString('version') || null;
-      const ctype   = i.options.getString('type');
-      const droppable = i.options.getBoolean('droppable');
+const rarity  = i.options.getString('rarity');
+const group   = i.options.getString('group');
+const idol    = i.options.getString('idol');
+const era     = i.options.getString('era') || null;
+const version = i.options.getString('version') || null;
+const ctype   = i.options.getString('type');
+const droppable = i.options.getBoolean('droppable');
 
-      // Bild (URL optional) + Attachment (optional) -> Attachment hat Vorrang
-      const imageUrlOpt = i.options.getString('image') || null;
-      const imageFile   = i.options.getAttachment('image_file') || null;
-      let image = imageUrlOpt;
-      if (imageFile && imageFile.url) {
-        const ct = (imageFile.contentType || '').toLowerCase();
-        if (!ct || ct.startsWith('image/')) image = imageFile.url;
+// === NEW: read attachment (required) ===
+const imgAtt = i.options.getAttachment('image');
+if (!imgAtt) {
+  return i.reply({
+    embeds: [ruiEmbed('Missing image', 'Please attach an image file.')],
+    ephemeral: true
+  });
+}
+
+// (optional) sanity checks
+const isImage = (imgAtt.contentType || '').startsWith('image/');
+const maxBytes = 10 * 1024 * 1024; // 10 MB
+if (!isImage || (imgAtt.size && imgAtt.size > maxBytes)) {
+  return i.reply({
+    embeds: [ruiEmbed('Invalid image', 'Only image files up to ~10 MB are allowed.')],
+    ephemeral: true
+  });
+}
+
+// use the CDN URL from the attachment
+const image = imgAtt.url;
       }
 
       if (!ID_REGEX.test(cardId)) {
