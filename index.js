@@ -186,43 +186,42 @@ async function registerCommands() {
       .addIntegerOption(o => o.setName('amount').setDescription('Amount (for coins/butterflies)').setRequired(false))
       .addStringOption(o => o.setName('card_id').setDescription('Card ID (ALL CAPS, for card gifts)').setRequired(false)),
 
-    // /addcard – NUR Datei-Upload für image
     new SlashCommandBuilder()
-      .setName('addcard')
-      .setDescription('STAFF ONLY – create a new card')
-      .addStringOption(o =>
-        o.setName('card_id')
-          .setDescription('ID template (ALL CAPS): {R}{GG}{II}V{V}{EE} → R=C/R/S/U/L/ES/EL · GG=Group(2) · II=Idol(2) · V=1..∞ · EE=01..99')
-          .setRequired(true)
-      )
-      .addStringOption(o => o.setName('group').setDescription('Group name (XLOV, etc.)').setRequired(true))
-      .addStringOption(o => o.setName('idol').setDescription('Idol / member name').setRequired(true))
-      .addStringOption(o =>
-        o.setName('rarity').setDescription('Card rarity').setRequired(true).addChoices(
-          { name: 'common', value: 'common' },
-          { name: 'rare', value: 'rare' },
-          { name: 'super_rare', value: 'super_rare' },
-          { name: 'ultra_rare', value: 'ultra_rare' },
-          { name: 'legendary', value: 'legendary' },
-          { name: 'event', value: 'event' },
-          { name: 'limited', value: 'limited' }
-        )
-      )
-      .addStringOption(o =>
-        o.setName('type').setDescription('Card type (reg, event, limited)').setRequired(true).addChoices(
-          { name: 'Regular', value: 'reg' },
-          { name: 'Event', value: 'event' },
-          { name: 'Limited', value: 'limited' }
-        )
-      )
-      .addStringOption(o => o.setName('era').setDescription('Era / concept (e.g. Bloom, Winter)').setRequired(true))
-      .addStringOption(o => o.setName('version').setDescription('Version inside that era (e.g. Ver. A, PC 03)').setRequired(true))
-      .addAttachmentOption(o =>
-        o.setName('image').setDescription('Upload the card image (PNG/JPG/GIF/WebP)').setRequired(true)
-      )
-      .addBooleanOption(o =>
-        o.setName('droppable').setDescription('Should this card drop in /drop?').setRequired(true)
-      )
+  .setName('addcard')
+  .setDescription('STAFF ONLY – create a new card')
+  .addStringOption(o =>
+    o.setName('card_id')
+      .setDescription('Card ID (ALL CAPS, format: {R}{GG}{II}V{V}{EE})')
+      .setRequired(true)
+  )
+  .addStringOption(o => o.setName('group').setDescription('Group name (two letters)').setRequired(true))
+  .addStringOption(o => o.setName('idol').setDescription('Idol name (two letters)').setRequired(true))
+  .addStringOption(o =>
+    o.setName('rarity').setDescription('Rarity (choose one)').setRequired(true).addChoices(
+      { name: 'common', value: 'common' },
+      { name: 'rare', value: 'rare' },
+      { name: 'super_rare', value: 'super_rare' },
+      { name: 'ultra_rare', value: 'ultra_rare' },
+      { name: 'legendary', value: 'legendary' },
+      { name: 'event', value: 'event' },
+      { name: 'limited', value: 'limited' }
+    )
+  )
+  .addStringOption(o =>
+    o.setName('type').setDescription('Type (reg, event, limited)').setRequired(true).addChoices(
+      { name: 'Regular', value: 'reg' },
+      { name: 'Event', value: 'event' },
+      { name: 'Limited', value: 'limited' }
+    )
+  )
+  .addStringOption(o => o.setName('era').setDescription('Era name (e.g. Bloom)').setRequired(true))
+  .addStringOption(o => o.setName('version').setDescription('Version number (1, 2, 3...)').setRequired(true))
+  .addAttachmentOption(o =>
+    o.setName('image').setDescription('Upload card image (PNG/JPG/WebP)').setRequired(true)
+  )
+  .addBooleanOption(o =>
+    o.setName('droppable').setDescription('Should drop in /drop').setRequired(true)
+  )
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
