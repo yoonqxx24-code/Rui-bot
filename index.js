@@ -169,7 +169,7 @@ async function registerCommands() {
       .setName('buy')
       .setDescription('Buy a specific card by its card code')
       .addStringOption(o =>
-        o.setName('card_id').setDescription('The card code (ALL CAPS, e.g. CXLHYV101)').setRequired(true)
+        o.setName('card_id').setDescription('The card code (ALL CAPS, e.g. CXLRIV101)').setRequired(true)
       ),
 
     new SlashCommandBuilder()
@@ -184,7 +184,7 @@ async function registerCommands() {
         )
       )
       .addIntegerOption(o => o.setName('amount').setDescription('Amount (for coins/butterflies)').setRequired(false))
-      .addStringOption(o => o.setName('card_id').setDescription('Card ID (ALL CAPS, for card gifts)').setRequired(false)),
+      .addStringOption(o => o.setName('card_id').setDescription('Card ID (ALL CAPS)').setRequired(false)),
 
     new SlashCommandBuilder()
   .setName('addcard')
@@ -194,10 +194,10 @@ async function registerCommands() {
       .setDescription('Card ID (ALL CAPS, format: {R}{GG}{II}V{V}{EE})')
       .setRequired(true)
   )
-  .addStringOption(o => o.setName('group').setDescription('Group name (two letters)').setRequired(true))
-  .addStringOption(o => o.setName('idol').setDescription('Idol name (two letters)').setRequired(true))
+  .addStringOption(o => o.setName('group').setDescription('Group name').setRequired(true))
+  .addStringOption(o => o.setName('idol').setDescription('Idol name').setRequired(true))
   .addStringOption(o =>
-    o.setName('rarity').setDescription('Rarity (choose one)').setRequired(true).addChoices(
+    o.setName('rarity').setDescription('Rarity').setRequired(true).addChoices(
       { name: 'common', value: 'common' },
       { name: 'rare', value: 'rare' },
       { name: 'super_rare', value: 'super_rare' },
