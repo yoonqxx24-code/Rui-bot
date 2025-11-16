@@ -187,41 +187,63 @@ async function registerCommands() {
       .addStringOption(o => o.setName('card_id').setDescription('Card ID (ALL CAPS)').setRequired(false)),
 
     new SlashCommandBuilder()
-  .setName('addcard')
-  .setDescription('STAFF ONLY – create a new card')
-  .addStringOption(o =>
-    o.setName('card_id')
-      .setDescription('Card ID (ALL CAPS, format: {R}{GG}{II}V{V}{EE})')
-      .setRequired(true)
-  )
-  .addStringOption(o => o.setName('group').setDescription('Group name').setRequired(true))
-  .addStringOption(o => o.setName('idol').setDescription('Idol name').setRequired(true))
-  .addStringOption(o =>
-    o.setName('rarity').setDescription('Rarity').setRequired(true).addChoices(
-      { name: 'common', value: 'common' },
-      { name: 'rare', value: 'rare' },
-      { name: 'super_rare', value: 'super_rare' },
-      { name: 'ultra_rare', value: 'ultra_rare' },
-      { name: 'legendary', value: 'legendary' },
-      { name: 'event', value: 'event' },
-      { name: 'limited', value: 'limited' }
-    )
-  )
-  .addStringOption(o =>
-    o.setName('type').setDescription('Type (reg, event, limited)').setRequired(true).addChoices(
-      { name: 'Regular', value: 'reg' },
-      { name: 'Event', value: 'event' },
-      { name: 'Limited', value: 'limited' }
-    )
-  )
-  .addStringOption(o => o.setName('era').setDescription('Era name (e.g. Bloom)').setRequired(true))
-  .addStringOption(o => o.setName('version').setDescription('Version number (1, 2, 3...)').setRequired(true))
-  .addAttachmentOption(o =>
-    o.setName('image').setDescription('Upload card image (PNG/JPG/WebP)').setRequired(true)
-  )
-  .addBooleanOption(o =>
-    o.setName('droppable').setDescription('Should drop in /drop').setRequired(true)
-  )
+      .setName('addcard')
+      .setDescription('STAFF ONLY – create a new card')
+      .addStringOption(o =>
+        o.setName('card_id')
+          .setDescription('Card ID (ALL CAPS, format: {R}{GG}{II}V{V}{EE})')
+          .setRequired(true)
+      )
+      .addStringOption(o => o.setName('group').setDescription('Group name').setRequired(true))
+      .addStringOption(o => o.setName('idol').setDescription('Idol name').setRequired(true))
+      .addStringOption(o =>
+        o.setName('rarity').setDescription('Rarity').setRequired(true).addChoices(
+          { name: 'common', value: 'common' },
+          { name: 'rare', value: 'rare' },
+          { name: 'super_rare', value: 'super_rare' },
+          { name: 'ultra_rare', value: 'ultra_rare' },
+          { name: 'legendary', value: 'legendary' },
+          { name: 'event', value: 'event' },
+          { name: 'limited', value: 'limited' }
+        )
+      )
+      .addStringOption(o =>
+        o.setName('type').setDescription('Type (reg, event, limited)').setRequired(true).addChoices(
+          { name: 'Regular', value: 'reg' },
+          { name: 'Event', value: 'event' },
+          { name: 'Limited', value: 'limited' }
+        )
+      )
+      .addStringOption(o => o.setName('era').setDescription('Era name (e.g. Bloom)').setRequired(true))
+      .addStringOption(o => o.setName('version').setDescription('Version number (1, 2, 3...)').setRequired(true))
+      .addAttachmentOption(o =>
+        o.setName('image').setDescription('Upload card image (PNG/JPG/WebP)').setRequired(true)
+      )
+      .addBooleanOption(o =>
+        o.setName('droppable').setDescription('Should drop in /drop').setRequired(true)
+      ),
+
+    // neue Staff-Commands
+    new SlashCommandBuilder()
+      .setName('editcard_dropon')
+      .setDescription('STAFF ONLY – make a card droppable')
+      .addStringOption(o =>
+        o.setName('card_id').setDescription('Card ID (ALL CAPS)').setRequired(true)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('editcard_dropoff')
+      .setDescription('STAFF ONLY – make a card NOT droppable')
+      .addStringOption(o =>
+        o.setName('card_id').setDescription('Card ID (ALL CAPS)').setRequired(true)
+      ),
+
+    new SlashCommandBuilder()
+      .setName('deletecard')
+      .setDescription('STAFF ONLY – delete a card completely')
+      .addStringOption(o =>
+        o.setName('card_id').setDescription('Card ID (ALL CAPS)').setRequired(true)
+      )
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -649,6 +671,100 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ embeds: [ruiEmbed('Card created',
         `New card was added.\nID: **${cardId}**\nGroup: **${group}**\nIdol: **${idol}**\nRarity: **${rarity}**\nType: **${ctype}**\nDroppable: **${droppable ? 'yes' : 'no'}**\nEra: **${era || '—'}**\nVersion: **${version || '—'}**`
       )] });
+    }
+
+    /* /editcard_dropon (STAFF) */
+    if (i.commandName === 'editcard_dropon') {
+      const staffEnv = process.env.STAFF_IDS || '';
+      const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
+
+      if (!staffList.includes(i.user.id)) {
+        return i.reply({
+          embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')],
+          ephemeral: true
+        });
+      }
+
+      const cardId = (i.options.getString('card_id') || '').toUpperCase();
+      const cards = await loadJsonOrRemote(CARDS_FILE, []);
+
+      const card = cards.find(c => c.id === cardId);
+      if (!card) {
+        return i.reply({
+          embeds: [ruiEmbed('Not found', `There is no card with ID **${cardId}**.`)],
+          ephemeral: true
+        });
+      }
+
+      card.droppable = true;
+      await saveJsonOrRemote(CARDS_FILE, cards);
+
+      return i.reply({
+        embeds: [ruiEmbed('Updated', `Card **${cardId}** is now **droppable**.`)]
+      });
+    }
+
+    /* /editcard_dropoff (STAFF) */
+    if (i.commandName === 'editcard_dropoff') {
+      const staffEnv = process.env.STAFF_IDS || '';
+      const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
+
+      if (!staffList.includes(i.user.id)) {
+        return i.reply({
+          embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')],
+          ephemeral: true
+        });
+      }
+
+      const cardId = (i.options.getString('card_id') || '').toUpperCase();
+      const cards = await loadJsonOrRemote(CARDS_FILE, []);
+
+      const card = cards.find(c => c.id === cardId);
+      if (!card) {
+        return i.reply({
+          embeds: [ruiEmbed('Not found', `There is no card with ID **${cardId}**.`)],
+          ephemeral: true
+        });
+      }
+
+      card.droppable = false;
+      await saveJsonOrRemote(CARDS_FILE, cards);
+
+      return i.reply({
+        embeds: [ruiEmbed('Updated', `Card **${cardId}** is now **NOT droppable**.`)]
+      });
+    }
+
+    /* /deletecard (STAFF) */
+    if (i.commandName === 'deletecard') {
+      const staffEnv = process.env.STAFF_IDS || '';
+      const staffList = staffEnv.split(',').map(s => s.trim()).filter(Boolean);
+
+      if (!staffList.includes(i.user.id)) {
+        return i.reply({
+          embeds: [ruiEmbed('Not allowed', 'This command is for Rui staff only.')],
+          ephemeral: true
+        });
+      }
+
+      const cardId = (i.options.getString('card_id') || '').toUpperCase();
+      let cards = await loadJsonOrRemote(CARDS_FILE, []);
+
+      const before = cards.length;
+      cards = cards.filter(c => c.id !== cardId);
+
+      if (cards.length === before) {
+        return i.reply({
+          embeds: [ruiEmbed('Not found', `There is no card with ID **${cardId}**.`)],
+          ephemeral: true
+        });
+      }
+
+      await saveJsonOrRemote(CARDS_FILE, cards);
+
+      return i.reply({
+        embeds: [ruiEmbed('Card deleted', `Card **${cardId}** was removed from the system.\n(Existing copies in inventories stay.)`)]
+      });
     }
 
     /* /claim */
