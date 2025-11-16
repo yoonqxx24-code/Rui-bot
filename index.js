@@ -1,7 +1,6 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const {
   Client,
   GatewayIntentBits,
@@ -14,6 +13,8 @@ const {
   ButtonBuilder,
   ButtonStyle
 } = require('discord.js');
+const { createCanvas, loadImage } = require('canvas');
+const axios = require('axios');
 
 // Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
