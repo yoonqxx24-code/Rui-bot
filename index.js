@@ -525,26 +525,48 @@ client.on(Events.InteractionCreate, async (i) => {
     }
 
     /* /inventory */
-    if (i.commandName === 'inventory') {
-      const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
-      const myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
+if (i.commandName === 'inventory') {
+  const allCards = await loadJsonOrRemote(CARDS_FILE, []);
+  const allUserCards = await loadJsonOrRemote(USER_CARDS_FILE, {});
 
-      if (!myCards.length) {
-        return i.reply({ embeds: [ruiEmbed(`${name}'s Inventory`, "You don't have any cards yet. Try `/drop` or buy a pack later.")] });
-      }
+  let myCards = Array.isArray(allUserCards[id]) ? allUserCards[id] : [];
 
-      const firstTen = myCards.slice(0, 10);
-      return i.reply({
-        embeds: [ruiEmbed(`${name}'s Inventory`,
-          `You currently own **${myCards.length}** card(s). Showing first ${firstTen.length}:`,
-          firstTen.map((c, idx) => ({
-            name: `#${idx + 1} • ${c.group} — ${c.member}`,
-            value: `ID: ${c.id} • Rarity: **${c.rarity || 'unknown'}**`,
-            inline: false
-          }))
-        )]
-      });
+  // 🔍 Entferne Kopien von Karten, die nicht mehr in "cards" existieren
+  if (allCards.length) {
+    const validIds = new Set(allCards.map(c => c.id));
+    const filtered = myCards.filter(c => validIds.has(c.id));
+
+    // Wenn sich etwas geändert hat → aufräumen & speichern
+    if (filtered.length !== myCards.length) {
+      allUserCards[id] = filtered;
+      await saveJsonOrRemote(USER_CARDS_FILE, allUserCards);
     }
+
+    myCards = filtered;
+  }
+
+  if (!myCards.length) {
+    return i.reply({
+      embeds: [ruiEmbed(
+        `${name}'s Inventory`,
+        "You don't have any cards yet. Try `/drop` or buy a pack later."
+      )]
+    });
+  }
+
+  const firstTen = myCards.slice(0, 10);
+  return i.reply({
+    embeds: [ruiEmbed(
+      `${name}'s Inventory`,
+      `You currently own **${myCards.length}** card(s). Showing first ${firstTen.length}:`,
+      firstTen.map((c, idx) => ({
+        name: `#${idx + 1} • ${c.group} — ${c.member}`,
+        value: `ID: ${c.id} • Rarity: **${c.rarity || 'unknown'}**`,
+        inline: false
+      }))
+    )]
+  });
+}
 
     /* /buy */
     if (i.commandName === 'buy') {
