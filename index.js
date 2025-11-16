@@ -830,70 +830,48 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ embeds: [embed] });
     }
 
-    /* /drop */
-   /* /drop */
-if (i.commandName === 'drop') {
-  const cards = await loadJsonOrRemote(CARDS_FILE, []);
-  if (!cards.length) {
-    return i.reply({
-      embeds: [ruiEmbed('No cards available', 'Add some cards first.')],
-    });
-  }
+/* /drop */
+    if (i.commandName === 'drop') {
+      const cards = await loadJsonOrRemote(CARDS_FILE, []);
+      if (!cards.length) {
+        return i.reply({
+          embeds: [ruiEmbed('No cards available', 'Add some cards first.')],
+          ephemeral: true
+        });
+      }
 
-  const now = Date.now();
+      const now = Date.now();
 
-  if (u.lastDrop) {
-    const diff = now - new Date(u.lastDrop).getTime();
-    const COOLDOWN = 60 * 1000;
-    if (diff < COOLDOWN) {
-      const left = Math.ceil((COOLDOWN - diff) / 1000);
-      return i.reply({
-        embeds: [ruiEmbed('Cooldown', `You can drop again in **${left} seconds**.`)],
-      });
-    }
-  }
-
-  const pulled = [];
-  for (let n = 0; n < 3; n++) {
-    const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, null);
-    const pool = cards.filter(c => c.rarity === rarity && c.droppable !== false);
-    const finalPool = pool.length ? pool : cards.filter(c => c.rarity === 'common');
-    const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
-    pulled.push(chosen);
-  }
-
-  u.pendingDrop = { cards: pulled, expiresAt: now + 60000 };
-  await saveJsonOrRemote(USERS_FILE, users);
-
-  // Collage erstellen
-  const imageBuffer = await createDropCollage(pulled);
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
-  );
-
-  return i.reply({
-    content: ` **${i.user.username} dropped 3 cards!**\nPick your favorite:`,
-    files: [{ attachment: imageBuffer, name: 'drop.png' }],
-    components: [row]
-  });
-}
-
+      if (u.lastDrop) {
+        const diff = now - new Date(u.lastDrop).getTime();
+        const COOLDOWN = 60 * 1000;
+        if (diff < COOLDOWN) {
+          const left = Math.ceil((COOLDOWN - diff) / 1000);
+          return i.reply({
+            embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)],
+            ephemeral: true
+          });
+        }
+      }
 
       const boostType = getActiveBoost(u);
       const pulled = [];
       for (let n = 0; n < 3; n++) {
         const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, boostType);
         const pool = cards.filter(c => c.rarity === rarity && c.droppable !== false);
-        const finalPool = pool.length ? pool : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
+        const finalPool = pool.length
+          ? pool
+          : cards.filter(c => c.rarity === 'common' && c.droppable !== false);
         const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
-        pulled.push({ ...chosen });
+        pulled.push(chosen);
       }
 
+      // pendingDrop merken (für Buttons)
       u.pendingDrop = { cards: pulled, expiresAt: now + 60 * 1000 };
       await saveJsonOrRemote(USERS_FILE, users);
+
+      // Collage aus den 3 Karten bauen
+      const imageBuffer = await createDropCollage(pulled);
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
@@ -901,23 +879,17 @@ if (i.commandName === 'drop') {
         new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
       );
 
-      const embed = new EmbedBuilder()
-        .setTitle(boostType ? `Drop (boost: ${boostType})` : 'Drop')
-        .setDescription(
-          `Choose **one**:\n` +
-          `1️⃣ ${pulled[0].group} — ${pulled[0].member} • **${pulled[0].rarity}**\n` +
-          `2️⃣ ${pulled[1].group} — ${pulled[1].member} • **${pulled[1].rarity}**\n` +
-          `3️⃣ ${pulled[2].group} — ${pulled[2].member} • **${pulled[2].rarity}**`
-        )
-        .setColor(0xFFB6C1);
-
-      return i.reply({ embeds: [embed], components: [row], ephemeral: true });
-    }
+      return i.reply({
+        content: `✨ **${i.user.username} conjured 3 mystical cards!**\nPick your fate.`,
+        files: [{ attachment: imageBuffer, name: 'drop.png' }],
+        components: [row]
+      });
+    } // <-- schließt NUR den /drop-Block
 
   } catch (err) {
     console.error(err);
     if (i.replied || i.deferred) return;
-    return i.reply({ embeds: [ruiEmbed('Error', 'Something went wrong in Rui. Check logs.')] });
+    return i.reply({ embeds: [ruiEmbed('Error', 'Something went wrong')] });
   }
 });
 
