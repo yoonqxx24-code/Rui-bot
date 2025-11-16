@@ -880,7 +880,7 @@ client.on(Events.InteractionCreate, async (i) => {
       );
 
       return i.reply({
-        content: `✨ **${i.user.username} conjured 3 mystical cards!**\nPick your fate.`,
+        content: `✨ **${i.user.username} dropped 3 cards!**\nPick your favorite.`,
         files: [{ attachment: imageBuffer, name: 'drop.png' }],
         components: [row]
       });
