@@ -16,6 +16,36 @@ const {
 const { createCanvas, loadImage } = require('canvas');
 const axios = require('axios');
 
+// === HELPER: createDropCollage ===
+async function createDropCollage(cards) {
+  const width = 1100;
+  const height = 450;
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+
+  // Hintergrund
+  ctx.fillStyle = "#1f1f1f";
+  ctx.fillRect(0, 0, width, height);
+
+  const positions = [
+    { x: 50, y: 25 },
+    { x: 400, y: 25 },
+    { x: 750, y: 25 }
+  ];
+
+  for (let n = 0; n < cards.length; n++) {
+    const card = cards[n];
+    try {
+      const img = await loadImage(card.image);
+      const pos = positions[n];
+      ctx.drawImage(img, pos.x, pos.y, 300, 400);
+    } catch (err) {
+      console.error("Failed loading an image:", err);
+    }
+  }
+
+  return canvas.toBuffer("image/png");
+}
 // Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -801,42 +831,56 @@ client.on(Events.InteractionCreate, async (i) => {
     }
 
     /* /drop */
-    if (i.commandName === 'drop') {
-      const cards = await loadJsonOrRemote(CARDS_FILE, []);
-      if (!cards.length) return i.reply({ embeds: [ruiEmbed('No cards available', 'Add some cards to cards.json first.')] });
+   /* /drop */
+if (i.commandName === 'drop') {
+  const cards = await loadJsonOrRemote(CARDS_FILE, []);
+  if (!cards.length) {
+    return i.reply({
+      embeds: [ruiEmbed('No cards available', 'Add some cards first.')],
+    });
+  }
 
-      const now = Date.now();
+  const now = Date.now();
 
-      if (u.pendingDrop && u.pendingDrop.expiresAt && now < u.pendingDrop.expiresAt) {
-        const opts = u.pendingDrop.cards;
+  if (u.lastDrop) {
+    const diff = now - new Date(u.lastDrop).getTime();
+    const COOLDOWN = 60 * 1000;
+    if (diff < COOLDOWN) {
+      const left = Math.ceil((COOLDOWN - diff) / 1000);
+      return i.reply({
+        embeds: [ruiEmbed('Cooldown', `You can drop again in **${left} seconds**.`)],
+      });
+    }
+  }
 
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
-        );
+  const pulled = [];
+  for (let n = 0; n < 3; n++) {
+    const rarity = pickRarityWithBoost(BASE_RARITY_WEIGHTS, null);
+    const pool = cards.filter(c => c.rarity === rarity && c.droppable !== false);
+    const finalPool = pool.length ? pool : cards.filter(c => c.rarity === 'common');
+    const chosen = finalPool[Math.floor(Math.random() * finalPool.length)];
+    pulled.push(chosen);
+  }
 
-        const embed = new EmbedBuilder()
-          .setTitle('Drop (pick one)')
-          .setDescription(
-            `Choose **one** of the 3 cards below:\n` +
-            `1️⃣ ${opts[0].group} — ${opts[0].member} • **${opts[0].rarity}**\n` +
-            `2️⃣ ${opts[1].group} — ${opts[1].member} • **${opts[1].rarity}**\n` +
-            `3️⃣ ${opts[2].group} — ${opts[2].member} • **${opts[2].rarity}**`
-          )
-          .setColor(0xFFB6C1);
+  u.pendingDrop = { cards: pulled, expiresAt: now + 60000 };
+  await saveJsonOrRemote(USERS_FILE, users);
 
-        return i.reply({ embeds: [embed], components: [row], ephemeral: true });
-      }
+  // Collage erstellen
+  const imageBuffer = await createDropCollage(pulled);
 
-      if (u.lastDrop) {
-        const diff = now - new Date(u.lastDrop).getTime();
-        const COOLDOWN = 60 * 1000;
-        if (diff < COOLDOWN) {
-          const left = Math.ceil((COOLDOWN - diff) / 1000);
-          return i.reply({ embeds: [ruiEmbed('Cooldown', `You can drop again in **${left}** seconds.`)], ephemeral: true });
-        }
-      }
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('drop_pick_0').setLabel('1').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('drop_pick_1').setLabel('2').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('drop_pick_2').setLabel('3').setStyle(ButtonStyle.Primary)
+  );
+
+  return i.reply({
+    content: ` **${i.user.username} dropped 3 cards!**\nPick your favorite:`,
+    files: [{ attachment: imageBuffer, name: 'drop.png' }],
+    components: [row]
+  });
+}
+
 
       const boostType = getActiveBoost(u);
       const pulled = [];
